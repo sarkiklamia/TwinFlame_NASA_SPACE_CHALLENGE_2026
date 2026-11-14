@@ -1,0 +1,46 @@
+# ============================================================
+# TwinFlame - Python dependencies
+# Install: pip install -r requirements.txt
+# The React frontend has its own package.json (app/frontend/)
+# ============================================================
+
+# ==============================
+# Data manipulation
+# ==============================
+pandas
+numpy
+
+# ==============================
+# Data storage and processing
+# ==============================
+duckdb
+pyarrow
+h3
+
+# ==============================
+# Geospatial processing
+# ==============================
+geopandas
+shapely
+pyproj
+scipy
+
+# ==============================
+# Backend API (serves the React dashboard)
+# ==============================
+fastapi
+uvicorn[standard]
+
+# ==============================
+# Ingestion, configuration and environment
+# ==============================
+requests
+python-dotenv
+pyyaml
+
+# ==============================
+# Testing and code quality
+# ==============================
+pytest
+httpx            # required by FastAPI's TestClient
+ruff
