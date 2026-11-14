@@ -1,0 +1,39 @@
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Generated data
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Tests / cache
+.pytest_cache/
+
+# Editors
+.vscode/
+.cursor/
+
+# Windows / Mac
+Thumbs.db
+.DS_Store
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.ipynb_checkpoints/
+data/
+database/*.duckdb
+database/*.duckdb.wal
+logs/
