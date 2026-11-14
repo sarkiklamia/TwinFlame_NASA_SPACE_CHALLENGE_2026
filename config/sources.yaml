@@ -1,0 +1,109 @@
+# ============================================================
+# TwinFlame - Data source definitions
+# Non-secret configuration only. The FIRMS MAP_KEY lives in .env.
+# Loaded by config/api_config.py
+# ============================================================
+
+firms:
+  base_url: https://firms.modaps.eosdis.nasa.gov/api
+
+  # Area endpoint shape (the key goes in the URL PATH, so never log raw URLs):
+  #   {base_url}/area/csv/{MAP_KEY}/{SOURCE}/{west,south,east,north | world}/{DAY_RANGE}[/{YYYY-MM-DD}]
+  area_endpoint: area/csv
+
+  limits:
+    max_day_range: 5                    # a single request covers 1-5 days
+    transactions_per_window: 5000       # per MAP_KEY
+    window_seconds: 600                 # 10 minutes; a multi-day request counts as several transactions
+
+  # Source keys (MODIS, NOAA20, NOAA21) match the data/raw/api/<folder> names.
+  # NOTE: Suomi NPP (VIIRS_SNPP_NRT) was retired by NASA on 2026-11-02, so it is intentionally absent.
+  # NOTE: NASA plans to end Terra MODIS in Jan 2027 and Aqua MODIS around Sep 2027;
+  #       keep MODIS enabled for historical continuity but expect it to stop updating.
+  sources:
+    MODIS:
+      enabled: true
+      firms_source: MODIS_NRT
+      instrument: MODIS
+      resolution_m: 1000
+      raw_subdir: MODIS
+      required_columns:
+        - latitude
+        - longitude
+        - brightness
+        - scan
+        - track
+        - acq_date
+        - acq_time
+        - satellite
+        - instrument
+        - confidence          # integer 0-100 for MODIS
+        - version
+        - bright_t31
+        - frp
+        - daynight
+
+    NOAA20:
+      enabled: true
+      firms_source: VIIRS_NOAA20_NRT
+      instrument: VIIRS
+      resolution_m: 375
+      raw_subdir: NOAA20
+      required_columns:
+        - latitude
+        - longitude
+        - bright_ti4
+        - scan
+        - track
+        - acq_date
+        - acq_time
+        - satellite
+        - instrument
+        - confidence          # l / n / h for VIIRS
+        - version
+        - bright_ti5
+        - frp
+        - daynight
+
+    NOAA21:
+      enabled: true
+      firms_source: VIIRS_NOAA21_NRT
+      instrument: VIIRS
+      resolution_m: 375
+      raw_subdir: NOAA21
+      required_columns:
+        - latitude
+        - longitude
+        - bright_ti4
+        - scan
+        - track
+        - acq_date
+        - acq_time
+        - satellite
+        - instrument
+        - confidence
+        - version
+        - bright_ti5
+        - frp
+        - daynight
+
+# Geographic partitioning (used by ingestion/geographic_partitioner.py).
+# Large areas are split into tiles so each request stays small and resumable.
+partitioning:
+  strategy: grid
+  tile_size_degrees: 30       # tune once real request volumes are known
+  # Bounding box as west,south,east,north. Use "world" to cover the globe.
+  bbox: world
+
+# Incremental ingestion defaults (used by ingestion/incremental_ingestion.py).
+ingestion:
+  default_day_range: 1
+  initial_backfill_days: 5
+
+# Data-quality rules (used by validation/).
+validation:
+  latitude_range: [-90, 90]
+  longitude_range: [-180, 180]
+  # FIRMS acq_time is HHMM with leading zeros dropped ("52" means 00:52 UTC).
+  # Zero-pad to 4 digits before parsing.
+  acq_time_pad_width: 4

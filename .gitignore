@@ -1,42 +1,113 @@
+# ============================================================
+# TwinFlame - Git Ignore
+# ============================================================
 
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-
-# Secrets
+# Environment variables and secrets
 .env
 .env.*
 !.env.example
-.streamlit/secrets.toml
+.envrc
+.secrets/
 
-# Generated data
-data/raw/*
-data/processed/*
-!data/raw/.gitkeep
-!data/processed/.gitkeep
+# Python bytecode and interpreter artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
 
-database/*.duckdb
-database/*.duckdb.wal
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.direnv/
 
-# Tests / cache
+# Python testing, linting, and type-checking
+.cache/
 .pytest_cache/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.tox/
+.nox/
+.coverage
+.coverage.*
+*.py,cover
+coverage.xml
+pytestdebug.log
+coverage/
+htmlcov/
 
-# Editors
-.vscode/
-.cursor/
+# Jupyter Notebook
+.ipynb_checkpoints/
 
-# Windows / Mac
-Thumbs.db
+# Frontend (React)
+node_modules/
+app/frontend/dist/
+app/frontend/build/
+app/frontend/.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE and editor settings
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+
+# Operating system files
 .DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
 
-# Build artifacts
+# Logs
+*.log
+logs/
+
+# Generated satellite data.
+# Ignore every file under data/, but keep the folder skeleton (.gitkeep)
+# and small committed fixtures in data/raw/sample/.
+data/**
+!data/**/
+!data/**/.gitkeep
+!data/raw/sample/**
+
+# Local databases and DuckDB spill files (schema.sql stays tracked)
+database/*.duckdb
+database/*.db
+database/*.wal
+database/*.sqlite
+database/*.sqlite3
+database/**/*.duckdb
+database/**/*.db
+database/**/*.wal
+database/**/*.sqlite
+database/**/*.sqlite3
+database/tmp_spill/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*.swo
+*.orig
+
+# Build and distribution
 build/
 dist/
 *.egg-info/
-.ipynb_checkpoints/
-data/
-database/*.duckdb
-database/*.duckdb.wal
-logs/
+*.egg
+pip-wheel-metadata/
+wheelhouse/
+
+# Local-only configuration (do not use for shareable project configuration)
+*.local
