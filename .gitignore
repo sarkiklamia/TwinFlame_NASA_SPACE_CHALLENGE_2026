@@ -72,12 +72,10 @@ ehthumbs.db
 logs/
 
 # Generated satellite data.
-# Ignore every file under data/, but keep the folder skeleton (.gitkeep)
-# and small committed fixtures in data/raw/sample/.
+# Ignore all generated and downloaded data; keep only folder skeletons (.gitkeep).
 data/**
 !data/**/
 !data/**/.gitkeep
-!data/raw/sample/**
 
 # Local databases and DuckDB spill files (schema.sql stays tracked)
 database/*.duckdb
