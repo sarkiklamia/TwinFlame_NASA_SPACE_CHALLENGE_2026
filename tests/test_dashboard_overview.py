@@ -163,3 +163,144 @@ def test_overview_uses_daily_summary_for_unfiltered_correspondences(
         "rejected": 1,
         "source": "daily_summary",
     }
+
+
+def _create_monitoring_database(path, *, include_optional_columns=True):
+    connection = duckdb.connect(str(path))
+    optional_columns = (
+        ", instrument VARCHAR, confidence VARCHAR, detection_status VARCHAR"
+        if include_optional_columns
+        else ""
+    )
+    connection.execute(
+        f"""
+        CREATE TABLE UNIFIED_DETECTIONS (
+            detection_id VARCHAR, platform VARCHAR, source VARCHAR,
+            latitude DOUBLE, longitude DOUBLE, acq_date DATE,
+            acq_time VARCHAR, frp_mw DOUBLE, daynight VARCHAR
+            {optional_columns}
+        )
+        """
+    )
+    acquired = datetime.now(timezone.utc)
+    if include_optional_columns:
+        connection.executemany(
+            "INSERT INTO UNIFIED_DETECTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "d1",
+                    "Terra",
+                    "MODIS_NRT",
+                    1.0,
+                    30.0,
+                    acquired.date(),
+                    acquired.strftime("%H%M"),
+                    20.0,
+                    "D",
+                    "MODIS",
+                    "85",
+                    "new",
+                ),
+                (
+                    "d2",
+                    "NOAA-21",
+                    "VIIRS_NOAA21_NRT",
+                    2.0,
+                    31.0,
+                    acquired.date(),
+                    acquired.strftime("%H%M"),
+                    120.0,
+                    "N",
+                    "VIIRS",
+                    "N",
+                    "harmonized",
+                ),
+            ],
+        )
+        connection.execute(
+            "CREATE TABLE SOURCE_FILES (file_name VARCHAR, retrieved_at_utc TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO SOURCE_FILES VALUES ('latest.csv', ?)",
+            [acquired.replace(tzinfo=None) - timedelta(minutes=3)],
+        )
+    else:
+        connection.execute(
+            """
+            INSERT INTO UNIFIED_DETECTIONS VALUES
+                ('d1', 'Terra', 'MODIS_NRT', 1, 30, ?, '1200', 20, 'D')
+            """,
+            [acquired.date()],
+        )
+    connection.close()
+
+
+def test_monitoring_returns_filtered_hotspots_and_retrieval_time(tmp_path, monkeypatch):
+    database_path = tmp_path / "monitoring.duckdb"
+    _create_monitoring_database(database_path)
+    monkeypatch.setattr(
+        main,
+        "get_settings",
+        lambda: SimpleNamespace(duckdb_path=database_path, cors_allowed_origins=()),
+    )
+
+    response = TestClient(main.app).get(
+        "/api/monitoring",
+        params={
+            "window": "1h",
+            "platform": "terra",
+            "sensor": "modis",
+            "daynight": "day",
+            "frp_min": 10,
+            "confidence": "85",
+            "status": "new",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_detections"] == 1
+    assert payload["detections"][0]["id"] == "d1"
+    assert payload["detections"][0]["native_confidence"] == "85"
+    assert payload["detections"][0]["status"] == "new"
+    assert payload["map_points"][0]["platform"] == "Terra"
+    assert payload["retrieval_source"] == "SOURCE_FILES"
+    assert payload["latest_retrieval_at"] is not None
+    assert payload["frp_distribution"][0]["from_10_to_50"] == 1
+
+
+def test_monitoring_reports_missing_optional_schema_fields(tmp_path, monkeypatch):
+    database_path = tmp_path / "monitoring-minimal.duckdb"
+    _create_monitoring_database(database_path, include_optional_columns=False)
+    monkeypatch.setattr(
+        main,
+        "get_settings",
+        lambda: SimpleNamespace(duckdb_path=database_path, cors_allowed_origins=()),
+    )
+
+    response = TestClient(main.app).get("/api/monitoring")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_detections"] == 1
+    assert payload["capabilities"]["confidence_filter"] is False
+    assert payload["capabilities"]["status_filter"] is False
+    assert payload["latest_retrieval_at"] is None
+
+
+def test_monitoring_requires_a_complete_custom_window(tmp_path, monkeypatch):
+    database_path = tmp_path / "monitoring.duckdb"
+    _create_monitoring_database(database_path)
+    monkeypatch.setattr(
+        main,
+        "get_settings",
+        lambda: SimpleNamespace(duckdb_path=database_path, cors_allowed_origins=()),
+    )
+
+    response = TestClient(main.app).get(
+        "/api/monitoring",
+        params={"window": "custom", "start_at": "2026-11-14T10:00:00Z"},
+    )
+
+    assert response.status_code == 422
+    assert "start_at and end_at" in response.json()["detail"]

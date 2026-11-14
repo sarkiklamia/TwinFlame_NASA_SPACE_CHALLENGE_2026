@@ -35,6 +35,7 @@ import {
   YAxis,
 } from "recharts";
 import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
+import MonitoringPage from "./MonitoringPage";
 
 type Filters = {
   period: string;
@@ -324,6 +325,7 @@ function OverviewMap({ data }: { data: OverviewData }) {
 }
 
 function App() {
+  const [activePage, setActivePage] = useState<"overview" | "monitoring">("overview");
   const [filters, setFilters] = useState(initialFilters);
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -412,10 +414,15 @@ function App() {
 
         <div className="side-section-label">WORKSPACE</div>
         <nav className="side-nav" aria-label="Dashboard navigation">
-          <button className="nav-item active" type="button">
+          <button
+            className={`nav-item ${activePage === "overview" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("overview")}
+            aria-current={activePage === "overview" ? "page" : undefined}
+          >
             <Layers3 size={17} />
             <span>Overview</span>
-            <span className="nav-active-mark" />
+            {activePage === "overview" && <span className="nav-active-mark" />}
           </button>
           <button className="nav-item" type="button" disabled title="Coming soon">
             <Link2 size={17} />
@@ -427,10 +434,15 @@ function App() {
             <span>Activity clusters</span>
             <span className="nav-soon">SOON</span>
           </button>
-          <button className="nav-item" type="button" disabled title="Coming soon">
+          <button
+            className={`nav-item ${activePage === "monitoring" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("monitoring")}
+            aria-current={activePage === "monitoring" ? "page" : undefined}
+          >
             <Satellite size={17} />
-            <span>Detections</span>
-            <span className="nav-soon">SOON</span>
+            <span>Live monitoring</span>
+            {activePage === "monitoring" && <span className="nav-active-mark" />}
           </button>
         </nav>
 
@@ -461,7 +473,7 @@ function App() {
           <div className="breadcrumb">
             <span>Workspace</span>
             <span className="breadcrumb-slash">/</span>
-            <strong>Overview</strong>
+            <strong>{activePage === "overview" ? "Overview" : "Live monitoring"}</strong>
           </div>
           <div className="topbar-right">
             <span className="utc-note"><Globe2 size={14} /> ALL TIMES UTC</span>
@@ -479,6 +491,10 @@ function App() {
         </header>
 
         <div className="page-wrap">
+          {activePage === "monitoring" ? (
+            <MonitoringPage />
+          ) : (
+            <>
           <section className="page-heading">
             <div>
               <div className="eyebrow"><span /> GLOBAL FIRE MONITOR</div>
@@ -977,6 +993,8 @@ function App() {
               </button>
             </span>
           </footer>
+            </>
+          )}
         </div>
       </main>
     </div>

@@ -29,6 +29,29 @@ The Overview expects these tables:
 Run the standardization and harmonization pipeline first if these tables are
 not yet available.
 
+## Near Real-Time Monitoring
+
+The Live Monitoring page reads hotspots from `UNIFIED_DETECTIONS` and refreshes
+its data every 60 seconds. `SOURCE_FILES` and `INGESTION_RUNS` are inspected for
+explicit retrieval timestamp columns so the page can distinguish when a
+satellite acquired an observation from when TwinFlame collected it. Native
+confidence and detection-status filters are enabled only when the configured
+database schema provides those fields (or a supported harmonization link for
+status); unavailable metadata is shown as unavailable, not estimated.
+
+The monitoring API accepts rolling windows of 1, 6, 12, 24, or 48 hours and a
+custom UTC range, along with platform, sensor, region, day/night, FRP,
+confidence, and supported status filters. To check the API and frontend:
+
+```powershell
+python -m pytest -q tests\test_dashboard_overview.py
+```
+
+```powershell
+Set-Location .\app\frontend
+npm run build
+```
+
 ## 2. Install dependencies
 
 Open PowerShell in the repository root:

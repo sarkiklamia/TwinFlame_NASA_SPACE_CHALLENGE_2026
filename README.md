@@ -20,3 +20,13 @@ The Overview supports date range, satellite/platform, geographic region,
 day/night, and fire radiative power filters. A missing database or an
 incomplete pipeline schema is reported in the dashboard rather than replaced
 with sample values.
+
+The Live Monitoring page polls the read-only `/api/monitoring` endpoint every
+60 seconds and supports rolling or custom acquisition-time windows, platform,
+sensor, region, day/night, FRP, and available native-confidence/status filters.
+It reads detections from `UNIFIED_DETECTIONS`; `SOURCE_FILES` and
+`INGESTION_RUNS` provide the latest retrieval timestamp when they expose an
+explicit retrieval-time column. Acquisition time is the satellite observation
+time, while retrieval time is when TwinFlame collected the source data. If a
+database does not include confidence, status, or retrieval metadata, those
+fields are identified as unavailable rather than inferred.
