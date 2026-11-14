@@ -17,6 +17,9 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
+database/*.duckdb
+database/*.duckdb.wal
+
 # Tests / cache
 .pytest_cache/
 
