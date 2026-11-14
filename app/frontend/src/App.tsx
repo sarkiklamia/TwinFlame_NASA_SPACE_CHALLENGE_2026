@@ -4,6 +4,7 @@ import {
   Activity,
   AlertCircle,
   ArrowUpRight,
+  Bell,
   CalendarDays,
   Check,
   ChevronDown,
@@ -36,6 +37,8 @@ import {
 } from "recharts";
 import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
 import MonitoringPage from "./MonitoringPage";
+import GeospatialPage from "./GeospatialPage";
+import AlertsCenter from "./AlertsCenter";
 
 type Filters = {
   period: string;
@@ -325,7 +328,9 @@ function OverviewMap({ data }: { data: OverviewData }) {
 }
 
 function App() {
-  const [activePage, setActivePage] = useState<"overview" | "monitoring">("overview");
+  const [activePage, setActivePage] = useState<
+    "overview" | "monitoring" | "geospatial" | "alerts"
+  >("overview");
   const [filters, setFilters] = useState(initialFilters);
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -429,10 +434,15 @@ function App() {
             <span>Correspondences</span>
             <span className="nav-soon">SOON</span>
           </button>
-          <button className="nav-item" type="button" disabled title="Coming soon">
-            <Flame size={17} />
-            <span>Activity clusters</span>
-            <span className="nav-soon">SOON</span>
+          <button
+            className={`nav-item ${activePage === "geospatial" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("geospatial")}
+            aria-current={activePage === "geospatial" ? "page" : undefined}
+          >
+            <Globe2 size={17} />
+            <span>Geospatial explore</span>
+            {activePage === "geospatial" && <span className="nav-active-mark" />}
           </button>
           <button
             className={`nav-item ${activePage === "monitoring" ? "active" : ""}`}
@@ -443,6 +453,16 @@ function App() {
             <Satellite size={17} />
             <span>Live monitoring</span>
             {activePage === "monitoring" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "alerts" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("alerts")}
+            aria-current={activePage === "alerts" ? "page" : undefined}
+          >
+            <Bell size={17} />
+            <span>Alerts center</span>
+            {activePage === "alerts" && <span className="nav-active-mark" />}
           </button>
         </nav>
 
@@ -473,7 +493,15 @@ function App() {
           <div className="breadcrumb">
             <span>Workspace</span>
             <span className="breadcrumb-slash">/</span>
-            <strong>{activePage === "overview" ? "Overview" : "Live monitoring"}</strong>
+            <strong>
+              {activePage === "overview"
+                ? "Overview"
+                : activePage === "monitoring"
+                  ? "Live monitoring"
+                  : activePage === "geospatial"
+                    ? "Geospatial exploration"
+                    : "Alerts center"}
+            </strong>
           </div>
           <div className="topbar-right">
             <span className="utc-note"><Globe2 size={14} /> ALL TIMES UTC</span>
@@ -493,6 +521,10 @@ function App() {
         <div className="page-wrap">
           {activePage === "monitoring" ? (
             <MonitoringPage />
+          ) : activePage === "alerts" ? (
+            <AlertsCenter />
+          ) : activePage === "geospatial" ? (
+            <GeospatialPage />
           ) : (
             <>
           <section className="page-heading">
