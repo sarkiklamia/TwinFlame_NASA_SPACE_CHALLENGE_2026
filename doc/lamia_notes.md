@@ -52,6 +52,14 @@ Set-Location .\app\frontend
 npm run build
 ```
 
+## Geospatial Exploration
+
+The page requires `UNIFIED_DETECTIONS`, `harm_activity_clusters`, and
+`harm_cluster_members`. Cluster boundaries and area are derived from member
+coordinates as an envelope; country and membership-quality filters appear only
+when those columns exist. Research areas and map annotations are saved locally
+in the same browser, not written to the read-only DuckDB database.
+
 ## 2. Install dependencies
 
 Open PowerShell in the repository root:
