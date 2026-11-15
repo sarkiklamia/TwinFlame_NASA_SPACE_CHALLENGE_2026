@@ -438,14 +438,14 @@ function App() {
             {activePage === "overview" && <span className="nav-active-mark" />}
           </button>
           <button
-            className={`nav-item ${activePage === "harmonization" ? "active" : ""}`}
+            className={`nav-item ${activePage === "monitoring" ? "active" : ""}`}
             type="button"
-            onClick={() => setActivePage("harmonization")}
-            aria-current={activePage === "harmonization" ? "page" : undefined}
+            onClick={() => setActivePage("monitoring")}
+            aria-current={activePage === "monitoring" ? "page" : undefined}
           >
-            <Link2 size={17} />
-            <span>Harmonization evaluation</span>
-            {activePage === "harmonization" && <span className="nav-active-mark" />}
+            <Satellite size={17} />
+            <span>Near Real-Time Monitoring</span>
+            {activePage === "monitoring" && <span className="nav-active-mark" />}
           </button>
           <button
             className={`nav-item ${activePage === "geospatial" ? "active" : ""}`}
@@ -454,18 +454,8 @@ function App() {
             aria-current={activePage === "geospatial" ? "page" : undefined}
           >
             <Globe2 size={17} />
-            <span>Geospatial explore</span>
+            <span>Geospatial Exploration</span>
             {activePage === "geospatial" && <span className="nav-active-mark" />}
-          </button>
-          <button
-            className={`nav-item ${activePage === "monitoring" ? "active" : ""}`}
-            type="button"
-            onClick={() => setActivePage("monitoring")}
-            aria-current={activePage === "monitoring" ? "page" : undefined}
-          >
-            <Satellite size={17} />
-            <span>Live monitoring</span>
-            {activePage === "monitoring" && <span className="nav-active-mark" />}
           </button>
           <button
             className={`nav-item ${activePage === "alerts" ? "active" : ""}`}
@@ -474,7 +464,7 @@ function App() {
             aria-current={activePage === "alerts" ? "page" : undefined}
           >
             <Bell size={17} />
-            <span>Alerts center</span>
+            <span>Alerts Center</span>
             {activePage === "alerts" && <span className="nav-active-mark" />}
           </button>
           <button
@@ -484,7 +474,7 @@ function App() {
             aria-current={activePage === "fire-season" ? "page" : undefined}
           >
             <Flame size={17} />
-            <span>Fire season monitor</span>
+            <span>Fire Season Monitor</span>
             {activePage === "fire-season" && <span className="nav-active-mark" />}
           </button>
           <button
@@ -494,7 +484,7 @@ function App() {
             aria-current={activePage === "historical" ? "page" : undefined}
           >
             <Clock3 size={17} />
-            <span>Historical fire analysis</span>
+            <span>Historical Fire Analysis</span>
             {activePage === "historical" && <span className="nav-active-mark" />}
           </button>
           <button
@@ -504,8 +494,18 @@ function App() {
             aria-current={activePage === "sensor-comparison" ? "page" : undefined}
           >
             <SlidersHorizontal size={17} />
-            <span>Sensor comparison</span>
+            <span>Sensor Comparison</span>
             {activePage === "sensor-comparison" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "harmonization" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("harmonization")}
+            aria-current={activePage === "harmonization" ? "page" : undefined}
+          >
+            <Link2 size={17} />
+            <span>Harmonization Evaluation</span>
+            {activePage === "harmonization" && <span className="nav-active-mark" />}
           </button>
           <button
             className={`nav-item ${activePage === "quality-methodology" ? "active" : ""}`}
@@ -514,7 +514,7 @@ function App() {
             aria-current={activePage === "quality-methodology" ? "page" : undefined}
           >
             <ShieldCheck size={17} />
-            <span>Quality &amp; methodology</span>
+            <span>Quality &amp; Methodology</span>
             {activePage === "quality-methodology" && <span className="nav-active-mark" />}
           </button>
           <button
@@ -525,7 +525,7 @@ function App() {
             title="10. Pipeline Management"
           >
             <Workflow size={17} />
-            <span>Pipeline management</span>
+            <span>Pipeline Management</span>
             {activePage === "pipeline-management" && <span className="nav-active-mark" />}
           </button>
         </nav>
@@ -561,22 +561,22 @@ function App() {
               {activePage === "overview"
                 ? "Overview"
                 : activePage === "monitoring"
-                  ? "Live monitoring"
+                  ? "Near Real-Time Monitoring"
                   : activePage === "geospatial"
-                    ? "Geospatial exploration"
+                    ? "Geospatial Exploration"
                     : activePage === "alerts"
-                      ? "Alerts center"
+                      ? "Alerts Center"
                       : activePage === "fire-season"
-                        ? "Fire season monitor"
+                        ? "Fire Season Monitor"
                         : activePage === "historical"
-                          ? "06. Historical fire analysis"
+                          ? "Historical Fire Analysis"
                           : activePage === "sensor-comparison"
-                            ? "07. Sensor comparison"
+                            ? "Sensor Comparison"
                             : activePage === "harmonization"
-                              ? "08. Harmonization evaluation"
+                              ? "Harmonization Evaluation"
                               : activePage === "quality-methodology"
-                                ? "09. Quality & methodology"
-                                : "10. Pipeline management"}
+                                ? "Quality & Methodology"
+                                : "Pipeline Management"}
             </strong>
           </div>
           <div className="topbar-right">

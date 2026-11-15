@@ -379,7 +379,7 @@ export default function PipelineManagementPage() {
         <div className="historical-title-group">
           <div className="historical-badge">
             <Server size={14} />
-            <span>PAGE 10 &middot; SYSTEM OPERATIONS &amp; EXECUTION ENGINE</span>
+            <span>SYSTEM OPERATIONS &amp; EXECUTION ENGINE</span>
           </div>
           <h1 className="historical-title">Pipeline Management</h1>
           <p className="historical-subtitle">
