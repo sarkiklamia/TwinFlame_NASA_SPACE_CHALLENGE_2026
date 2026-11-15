@@ -203,6 +203,17 @@ export default function PipelineManagementPage() {
 
   // Job Trigger Modal state
   const [isTriggerModalOpen, setIsTriggerModalOpen] = useState<boolean>(false);
+  const [operator, setOperator] = useState(false);
+
+  useEffect(() => {
+    const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+
+    fetch(`${base}/auth/me`, { credentials: "include" })
+      .then((response) => response.json())
+      .then((data) => setOperator(data.role === "operator"))
+      .catch(() => setOperator(false));
+  }, []);
+
   const [triggerStage, setTriggerStage] = useState<string>("harmonization");
   const [triggerStartDate, setTriggerStartDate] = useState<string>("");
   const [triggerEndDate, setTriggerEndDate] = useState<string>("");
@@ -327,6 +338,7 @@ export default function PipelineManagementPage() {
     try {
       const res = await fetch(`${base}/api/pipeline/run`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           stage: triggerStage,
@@ -388,11 +400,38 @@ export default function PipelineManagementPage() {
         </div>
 
         <div className="historical-header-actions">
+          {operator && (
+            <button
+              type="button"
+              className="historical-secondary-action-btn"
+              onClick={async () => {
+                const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+                try {
+                  const response = await fetch(`${base}/auth/logout`, {
+                    method: "POST",
+                    credentials: "include",
+                  });
+                  if (response.ok) setOperator(false);
+                } catch {
+                  // Keep the current state if the logout request fails.
+                }
+              }}
+            >
+              Logout
+            </button>
+          )}
           <button
             type="button"
             className="historical-primary-action-btn pipeline-trigger-btn"
-            onClick={() => setIsTriggerModalOpen(true)}
-            title="Execute new harmonization pipeline run"
+            onClick={() => {
+              if (!operator) {
+                const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+                window.location.assign(`${base}/auth/google/login`);
+                return;
+              }
+              setIsTriggerModalOpen(true);
+            }}
+            title={operator ? "Execute new harmonization pipeline run" : "Sign in with Google to run pipeline"}
           >
             <Play size={14} className="fill-icon" />
             <span>Execute Pipeline Run</span>

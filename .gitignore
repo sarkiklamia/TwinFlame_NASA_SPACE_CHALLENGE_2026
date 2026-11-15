@@ -106,6 +106,7 @@ database/**/*.wal
 database/**/*.sqlite
 database/**/*.sqlite3
 database/tmp_spill/
+database/auth_sessions.sqlite3
 
 # Temporary files
 tmp/

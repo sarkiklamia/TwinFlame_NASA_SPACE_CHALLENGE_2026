@@ -159,6 +159,11 @@ def _validate(settings: Settings) -> None:
     if settings.api_max_retries < 0 or settings.api_retry_delay < 0 or settings.api_timeout <= 0:
         raise ValueError("API_TIMEOUT must be > 0 and API_MAX_RETRIES / API_RETRY_DELAY must be >= 0")
 
+    # Reject wildcard CORS in production
+    if settings.is_production and "*" in settings.cors_allowed_origins:
+        raise ValueError("Wildcard CORS origin '*' is not allowed in production")
+
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

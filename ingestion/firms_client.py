@@ -129,14 +129,14 @@ class FIRMSClient:
                 raise FIRMSRequestError(
                     f"FIRMS HTTP error for {source_key}: "
                     f"{self.config.redact(str(exc))}"
-                ) from exc
+                ) from None
 
             except requests.exceptions.RequestException as exc:
                 if attempt >= self.config.max_retries:
                     raise FIRMSRequestError(
                         f"FIRMS connection failed for {source_key}: "
                         f"{self.config.redact(str(exc))}"
-                    ) from exc
+                    ) from None
 
                 delay = self._retry_delay(None, attempt)
 

@@ -1,6 +1,8 @@
 """Read-only API endpoints for the TwinFlame dashboard."""
 
 from __future__ import annotations
+from fastapi import Depends
+from security.auth import configure_auth, require_operator
 
 import csv
 import io
@@ -80,9 +82,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(get_settings().cors_allowed_origins),
     allow_credentials=True,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+configure_auth(app)
 
 
 def _platform_condition(platform: str, column: str) -> str:
@@ -5750,6 +5754,7 @@ def _execute_pipeline_job(
 def trigger_pipeline_run(
     payload: PipelineRunRequest,
     background_tasks: BackgroundTasks,
+    operator: dict = Depends(require_operator),
 ) -> dict[str, object]:
     for existing_id, existing_job in ACTIVE_PIPELINE_JOBS.items():
         if existing_job.get("status") in ("RUNNING", "PENDING"):
