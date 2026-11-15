@@ -92,6 +92,56 @@ def _create_database(path):
     connection.close()
 
 
+def _create_canonical_detection_database(path):
+    connection = duckdb.connect(str(path))
+    connection.execute(
+        """
+        CREATE TABLE unified_detections (
+            detection_id BIGINT, acquisition_time_utc TIMESTAMP,
+            platform VARCHAR, source VARCHAR, latitude DOUBLE,
+            longitude DOUBLE, frp_mw DOUBLE, daynight VARCHAR
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO unified_detections VALUES
+            (1, ?, 'Terra', 'MODIS', 34.1, -6.8, 12.5, 'D'),
+            (2, ?, 'NOAA-21', 'VIIRS', 34.2, -6.9, 24.0, 'N')
+        """,
+        [datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2),
+         datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)],
+    )
+    connection.close()
+
+
+def test_canonical_timestamp_works_without_harmonization_tables(tmp_path, monkeypatch):
+    database_path = tmp_path / "canonical.duckdb"
+    _create_canonical_detection_database(database_path)
+    monkeypatch.setattr(
+        main,
+        "get_settings",
+        lambda: SimpleNamespace(duckdb_path=database_path, cors_allowed_origins=()),
+    )
+    client = TestClient(main.app)
+
+    overview_response = client.get("/api/overview", params={"period": "7d"})
+    geospatial_response = client.get("/api/geospatial")
+
+    assert overview_response.status_code == 200
+    overview_payload = overview_response.json()
+    assert overview_payload["kpis"]["total_detections"] == 2
+    assert overview_payload["kpis"]["activity_clusters"] is None
+    assert overview_payload["kpis"]["strong_correspondences"] is None
+    assert overview_payload["harmonization_available"] is False
+
+    assert geospatial_response.status_code == 200
+    geospatial_payload = geospatial_response.json()
+    assert len(geospatial_payload["detections"]) == 2
+    assert geospatial_payload["clusters"] == []
+    assert geospatial_payload["cluster_data_available"] is False
+
+
 def test_overview_filters_all_panels_from_the_same_detection_set(tmp_path, monkeypatch):
     database_path = tmp_path / "dashboard.duckdb"
     _create_database(database_path)
