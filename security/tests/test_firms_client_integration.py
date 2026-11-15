@@ -136,10 +136,6 @@ def test_error_log_does_not_expose_key(client, caplog, monkeypatch):
     assert FAKE_KEY not in caplog.text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Original HTTP exception may expose MAP_KEY in traceback",
-)
 def test_full_traceback_does_not_expose_key(client):
     client.session.get.return_value = response_with_status(403)
 
