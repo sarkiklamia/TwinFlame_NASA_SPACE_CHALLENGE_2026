@@ -99,6 +99,7 @@ partitioning:
 ingestion:
   default_day_range: 1
   initial_backfill_days: 5
+  harmonization_interval_minutes: 60
 
 # Data-quality rules (used by validation/).
 validation:

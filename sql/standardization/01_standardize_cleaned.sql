@@ -1,6 +1,6 @@
 -- ============================================================
 -- PyroSync — Standardization
--- Input : data/processed/cleaned/cleaned_detections.parquet
+-- Input : {{CLEANED_INPUT}}
 -- Output: temporary Parquet file, verified before replacement
 --
 -- IMPORTANT:
@@ -116,10 +116,10 @@ COPY (
         CAST(quality_flags AS VARCHAR) AS quality_flags
 
     FROM read_parquet(
-        'data/processed/cleaned/cleaned_detections.parquet'
+        '{{CLEANED_INPUT}}'
     )
 
-) TO 'data/processed/cleaned/cleaned_detections.standardizing.tmp.parquet'
+) TO '{{STANDARDIZED_OUTPUT}}'
 (FORMAT PARQUET, COMPRESSION ZSTD);
 
 
@@ -132,13 +132,13 @@ SELECT
     (
         SELECT COUNT(*)
         FROM read_parquet(
-            'data/processed/cleaned/cleaned_detections.parquet'
+            '{{CLEANED_INPUT}}'
         )
     ) AS original_rows,
     (
         SELECT COUNT(*)
         FROM read_parquet(
-            'data/processed/cleaned/cleaned_detections.standardizing.tmp.parquet'
+            '{{STANDARDIZED_OUTPUT}}'
         )
     ) AS standardized_rows;
 
@@ -171,7 +171,7 @@ SELECT
     ) AS invalid_daynight_values
 
 FROM read_parquet(
-    'data/processed/cleaned/cleaned_detections.standardizing.tmp.parquet'
+    '{{STANDARDIZED_OUTPUT}}'
 );
 
 
@@ -187,7 +187,7 @@ SELECT
     COUNT(*) AS record_count
 
 FROM read_parquet(
-    'data/processed/cleaned/cleaned_detections.standardizing.tmp.parquet'
+    '{{STANDARDIZED_OUTPUT}}'
 )
 
 GROUP BY
@@ -211,7 +211,7 @@ SELECT
     COUNT(*) AS record_count
 
 FROM read_parquet(
-    'data/processed/cleaned/cleaned_detections.standardizing.tmp.parquet'
+    '{{STANDARDIZED_OUTPUT}}'
 )
 
 GROUP BY
@@ -243,7 +243,7 @@ SELECT
     ) AS rows_without_brightness_measurements
 
 FROM read_parquet(
-    'data/processed/cleaned/cleaned_detections.standardizing.tmp.parquet'
+    '{{STANDARDIZED_OUTPUT}}'
 );
 
 
@@ -254,7 +254,7 @@ FROM read_parquet(
 DESCRIBE
 SELECT *
 FROM read_parquet(
-    'data/processed/cleaned/cleaned_detections.standardizing.tmp.parquet'
+    '{{STANDARDIZED_OUTPUT}}'
 );
 
 
@@ -264,6 +264,6 @@ FROM read_parquet(
 
 SELECT *
 FROM read_parquet(
-    'data/processed/cleaned/cleaned_detections.standardizing.tmp.parquet'
+    '{{STANDARDIZED_OUTPUT}}'
 )
 LIMIT 10;

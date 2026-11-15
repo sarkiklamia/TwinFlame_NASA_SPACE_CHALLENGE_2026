@@ -3,13 +3,11 @@
 -- PYROSYNC - SOURCE CLEANING AND QUALITY FLAGGING
 --
 -- INPUTS:
---   data/raw/sample/*.csv
---   data/raw/api/**/*.parquet
+--   c2_raw and api_raw temporary tables created by the caller
 --
 -- OUTPUTS:
---   data/processed/cleaned/cleaned_detections.parquet
---   data/processed/quarantine/quarantined_detections.parquet
---   data/processed/reports/cleaning_report.csv
+--   Paths supplied through CLEANED_OUTPUT, QUARANTINE_OUTPUT,
+--   and CLEANING_REPORT_OUTPUT template values
 --
 -- PRINCIPLES:
 --   1. Raw files are never modified.
@@ -24,24 +22,11 @@
 
 
 -- ============================================================
--- 1. LOAD RAW SOURCES
+-- 1. RAW INPUT TABLES
 -- ============================================================
-
-CREATE OR REPLACE TEMP TABLE c2_raw AS
-SELECT *
-FROM read_csv_auto(
-    'data/raw/sample/*.csv',
-    union_by_name = true,
-    filename = true
-);
-
-CREATE OR REPLACE TEMP TABLE api_raw AS
-SELECT *
-FROM read_parquet(
-    'data/raw/api/**/*.parquet',
-    union_by_name = true,
-    filename = true
-);
+-- The caller creates c2_raw and api_raw from an explicit input-file list.
+-- This lets both the full archive rebuild and incremental API import use
+-- exactly the same cleaning rules without scanning unrelated old files.
 
 
 -- ============================================================
@@ -396,13 +381,13 @@ WHERE frp IS NOT NULL AND frp > 0;
 
 
 -- ============================================================
--- 7. CALCULATE INVESTIGATION THRESHOLDS
+-- 7. CALCULATE OR REUSE INVESTIGATION THRESHOLDS
 -- ============================================================
 -- Lower 1st percentile: low-tail review candidates.
 -- Upper Q3 + 1.5 * IQR: high-value review candidates.
 -- Thresholds are source/satellite-specific.
 
-CREATE OR REPLACE TEMP TABLE investigation_thresholds AS
+CREATE OR REPLACE TEMP TABLE computed_investigation_thresholds AS
 
 SELECT
     source,
@@ -415,6 +400,25 @@ SELECT
 
 FROM investigation_values
 GROUP BY source, satellite, metric;
+
+-- A full rebuild calculates these thresholds from its complete input set.
+-- Incremental API batches reuse the saved baseline thresholds. New
+-- source/satellite/metric combinations fall back to batch-derived values.
+CREATE OR REPLACE TEMP TABLE investigation_thresholds AS
+SELECT *
+FROM cleaning_threshold_overrides
+
+UNION ALL
+
+SELECT computed.*
+FROM computed_investigation_thresholds AS computed
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM cleaning_threshold_overrides AS fixed
+    WHERE fixed.source = computed.source
+      AND fixed.satellite = computed.satellite
+      AND fixed.metric = computed.metric
+);
 
 
 -- ============================================================
@@ -627,7 +631,7 @@ COPY (
     SELECT *
     FROM cleaned_records
 )
-TO 'data/processed/cleaned/cleaned_detections.parquet'
+TO '{{CLEANED_OUTPUT}}'
 (FORMAT PARQUET, COMPRESSION ZSTD, OVERWRITE_OR_IGNORE TRUE);
 
 
@@ -640,7 +644,7 @@ COPY (
     SELECT *
     FROM quarantined_records
 )
-TO 'data/processed/quarantine/quarantined_detections.parquet'
+TO '{{QUARANTINE_OUTPUT}}'
 (FORMAT PARQUET, COMPRESSION ZSTD, OVERWRITE_OR_IGNORE TRUE);
 
 
@@ -708,7 +712,7 @@ COPY (
     FROM cleaned_records
 
 )
-TO 'data/processed/reports/cleaning_report.csv'
+TO '{{CLEANING_REPORT_OUTPUT}}'
 (HEADER, DELIMITER ',', OVERWRITE_OR_IGNORE TRUE);
 
 

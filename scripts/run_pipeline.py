@@ -43,6 +43,7 @@ import duckdb
 ROOT = Path(__file__).resolve().parents[1]
 
 DB_PATH = ROOT / "database" / "twinflame.duckdb"
+DUCKDB_TEMP_DIR = ROOT / "database" / "tmp_spill"
 
 RAW_SAMPLE_DIR = ROOT / "data" / "raw" / "sample"
 RAW_ARCHIVE_DIR = ROOT / "data" / "raw" / "archive"
@@ -122,6 +123,26 @@ DB_INSERT_COLUMNS = [
     "quality_flags",
 ]
 
+API_RAW_COLUMNS = {
+    "latitude": "DOUBLE",
+    "longitude": "DOUBLE",
+    "brightness": "DOUBLE",
+    "bright_t31": "DOUBLE",
+    "bright_ti4": "DOUBLE",
+    "bright_ti5": "DOUBLE",
+    "frp": "DOUBLE",
+    "scan": "DOUBLE",
+    "track": "DOUBLE",
+    "acq_date": "VARCHAR",
+    "acq_time": "BIGINT",
+    "satellite": "VARCHAR",
+    "instrument": "VARCHAR",
+    "confidence": "VARCHAR",
+    "version": "VARCHAR",
+    "daynight": "VARCHAR",
+    "filename": "VARCHAR",
+}
+
 
 # ---------------------------------------------------------------------------
 # LOGGING
@@ -171,6 +192,7 @@ def require_file(path: Path) -> None:
 def ensure_directories() -> None:
     for directory in (
         DB_PATH.parent,
+        DUCKDB_TEMP_DIR,
         CLEANED_DIR,
         QUARANTINE_DIR,
         REPORT_DIR,
@@ -301,7 +323,35 @@ def discover_inputs() -> list[InputFile]:
 # ---------------------------------------------------------------------------
 
 def open_database() -> duckdb.DuckDBPyConnection:
-    return duckdb.connect(str(DB_PATH))
+    DUCKDB_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    conn = duckdb.connect(str(DB_PATH))
+
+    memory_limit = os.environ.get("DUCKDB_MEMORY_LIMIT", "4GB").strip().upper()
+    if not re.fullmatch(r"\d+(KB|MB|GB|TB)", memory_limit):
+        conn.close()
+        raise ValueError(
+            "DUCKDB_MEMORY_LIMIT must be a size such as 2GB, 4096MB, or 1TB."
+        )
+
+    try:
+        threads = int(os.environ.get("DUCKDB_THREADS", "2"))
+    except ValueError as exc:
+        conn.close()
+        raise ValueError("DUCKDB_THREADS must be a positive integer.") from exc
+    if threads <= 0:
+        conn.close()
+        raise ValueError("DUCKDB_THREADS must be a positive integer.")
+
+    conn.execute(f"SET temp_directory = {sql_literal(DUCKDB_TEMP_DIR)}")
+    conn.execute(f"SET memory_limit = {sql_literal(memory_limit)}")
+    conn.execute(f"SET threads = {threads}")
+    logger.info(
+        "DuckDB configured: memory_limit=%s threads=%s spill_dir=%s",
+        memory_limit,
+        threads,
+        DUCKDB_TEMP_DIR,
+    )
+    return conn
 
 
 def initialize_database(conn: duckdb.DuckDBPyConnection) -> None:
@@ -586,11 +636,165 @@ def execute_sql_stage(
     conn: duckdb.DuckDBPyConnection,
     sql_path: Path,
     description: str,
+    replacements: dict[str, str | Path] | None = None,
 ) -> None:
     require_file(sql_path)
 
     logger.info("Running stage: %s", description)
-    conn.execute(sql_path.read_text(encoding="utf-8"))
+    sql = sql_path.read_text(encoding="utf-8")
+
+    for name, value in (replacements or {}).items():
+        escaped = str(value).replace("\\", "/").replace("'", "''")
+        sql = sql.replace("{{" + name + "}}", escaped)
+
+    unresolved = re.findall(r"\{\{([A-Z_]+)\}\}", sql)
+    if unresolved:
+        raise RuntimeError(
+            f"Unresolved SQL template values in {sql_path.name}: {unresolved}"
+        )
+
+    conn.execute(sql)
+
+
+def sql_literal(value: str | Path) -> str:
+    escaped = str(value).replace("\\", "/").replace("'", "''")
+    return f"'{escaped}'"
+
+
+def sql_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def create_raw_input_tables(
+    conn: duckdb.DuckDBPyConnection,
+    inputs: list[InputFile],
+) -> None:
+    """Expose archive rebuild inputs as lazy scans for shared cleaning SQL."""
+    archive_paths = [item.path for item in inputs if item.source_type == "ARCHIVE"]
+    api_paths = [item.path for item in inputs if item.source_type == "API"]
+
+    if archive_paths:
+        paths_sql = ", ".join(sql_literal(path) for path in archive_paths)
+        conn.execute(
+            "CREATE OR REPLACE TEMP VIEW c2_raw AS "
+            "SELECT * FROM read_csv_auto([" + paths_sql + "], "
+            "union_by_name = true, filename = true)"
+        )
+    else:
+        conn.execute(
+            """
+            CREATE OR REPLACE TEMP VIEW c2_raw AS
+            SELECT
+                CAST(NULL AS DOUBLE) AS latitude,
+                CAST(NULL AS DOUBLE) AS longitude,
+                CAST(NULL AS DOUBLE) AS brightness,
+                CAST(NULL AS DOUBLE) AS bright_t31,
+                CAST(NULL AS DOUBLE) AS frp,
+                CAST(NULL AS DOUBLE) AS scan,
+                CAST(NULL AS DOUBLE) AS track,
+                CAST(NULL AS VARCHAR) AS acq_date,
+                CAST(NULL AS BIGINT) AS acq_time,
+                CAST(NULL AS VARCHAR) AS satellite,
+                CAST(NULL AS VARCHAR) AS instrument,
+                CAST(NULL AS VARCHAR) AS confidence,
+                CAST(NULL AS VARCHAR) AS version,
+                CAST(NULL AS VARCHAR) AS daynight,
+                CAST(NULL AS VARCHAR) AS type,
+                CAST(NULL AS VARCHAR) AS filename
+            WHERE FALSE
+            """
+        )
+
+    if api_paths:
+        api_selects = []
+        for path in api_paths:
+            raw_path = sql_literal(path)
+            available_columns = {
+                row[0].casefold(): row[0]
+                for row in conn.execute(
+                    "DESCRIBE SELECT * FROM read_parquet("
+                    f"{raw_path}, union_by_name = true, filename = true)"
+                ).fetchall()
+            }
+            projection = []
+            for column, sql_type in API_RAW_COLUMNS.items():
+                actual_name = available_columns.get(column.casefold())
+                expression = (
+                    f"CAST(NULL AS {sql_type})"
+                    if actual_name is None
+                    else sql_identifier(actual_name)
+                )
+                projection.append(
+                    f"{expression} AS {sql_identifier(column)}"
+                )
+            api_selects.append(
+                "SELECT " + ", ".join(projection)
+                + f" FROM read_parquet({raw_path}, filename = true)"
+            )
+        conn.execute(
+            "CREATE OR REPLACE TEMP VIEW api_raw AS "
+            + " UNION ALL ".join(api_selects)
+        )
+    else:
+        conn.execute(
+            """
+            CREATE OR REPLACE TEMP VIEW api_raw AS
+            SELECT
+                CAST(NULL AS DOUBLE) AS latitude,
+                CAST(NULL AS DOUBLE) AS longitude,
+                CAST(NULL AS DOUBLE) AS brightness,
+                CAST(NULL AS DOUBLE) AS bright_t31,
+                CAST(NULL AS DOUBLE) AS bright_ti4,
+                CAST(NULL AS DOUBLE) AS bright_ti5,
+                CAST(NULL AS DOUBLE) AS frp,
+                CAST(NULL AS DOUBLE) AS scan,
+                CAST(NULL AS DOUBLE) AS track,
+                CAST(NULL AS VARCHAR) AS acq_date,
+                CAST(NULL AS BIGINT) AS acq_time,
+                CAST(NULL AS VARCHAR) AS satellite,
+                CAST(NULL AS VARCHAR) AS instrument,
+                CAST(NULL AS VARCHAR) AS confidence,
+                CAST(NULL AS VARCHAR) AS version,
+                CAST(NULL AS VARCHAR) AS daynight,
+                CAST(NULL AS VARCHAR) AS filename
+            WHERE FALSE
+            """
+        )
+
+    # A full archive rebuild recalculates thresholds from all of its inputs.
+    conn.execute(
+        """
+        CREATE OR REPLACE TEMP TABLE cleaning_threshold_overrides AS
+        SELECT
+            CAST(NULL AS VARCHAR) AS source,
+            CAST(NULL AS VARCHAR) AS satellite,
+            CAST(NULL AS VARCHAR) AS metric,
+            CAST(NULL AS BIGINT) AS observation_count,
+            CAST(NULL AS DOUBLE) AS lower_percentile,
+            CAST(NULL AS DOUBLE) AS q1,
+            CAST(NULL AS DOUBLE) AS q3
+        WHERE FALSE
+        """
+    )
+
+
+def save_cleaning_threshold_baselines(
+    conn: duckdb.DuckDBPyConnection,
+) -> None:
+    """Persist the full-rebuild statistics for subsequent incremental files."""
+    conn.execute("DELETE FROM CLEANING_THRESHOLD_BASELINES")
+    conn.execute(
+        """
+        INSERT INTO CLEANING_THRESHOLD_BASELINES (
+            source, satellite, metric, observation_count,
+            lower_percentile, q1, q3, updated_at
+        )
+        SELECT
+            source, satellite, metric, observation_count,
+            lower_percentile, q1, q3, current_timestamp
+        FROM computed_investigation_thresholds
+        """
+    )
 
 
 def parquet_columns(
@@ -679,8 +883,22 @@ def validate_sql_output_contract(
 
 
 
-def run_sql_pipeline(conn: duckdb.DuckDBPyConnection) -> None:
-    execute_sql_stage(conn, SQL_CLEANING, "Cleaning")
+def run_sql_pipeline(
+    conn: duckdb.DuckDBPyConnection,
+    inputs: list[InputFile],
+) -> None:
+    create_raw_input_tables(conn, inputs)
+
+    execute_sql_stage(
+        conn,
+        SQL_CLEANING,
+        "Cleaning",
+        {
+            "CLEANED_OUTPUT": CLEANED_PARQUET,
+            "QUARANTINE_OUTPUT": QUARANTINE_DIR / "quarantined_detections.parquet",
+            "CLEANING_REPORT_OUTPUT": REPORT_DIR / "cleaning_report.csv",
+        },
+    )
 
     # Cleaning still uses the original/raw column names.
     validate_sql_output_contract(
@@ -693,6 +911,10 @@ def run_sql_pipeline(conn: duckdb.DuckDBPyConnection) -> None:
         conn,
         SQL_STANDARDIZATION,
         "Standardization",
+        {
+            "CLEANED_INPUT": CLEANED_PARQUET,
+            "STANDARDIZED_OUTPUT": STANDARDIZED_TMP,
+        },
     )
 
     # Standardization introduces scan_km, track_km, frp_mw, etc.
@@ -708,6 +930,10 @@ def run_sql_pipeline(conn: duckdb.DuckDBPyConnection) -> None:
         conn,
         SQL_DETECTION_IDS,
         "Deterministic detection IDs",
+        {
+            "STANDARDIZED_INPUT": CLEANED_PARQUET,
+            "IDENTIFIED_OUTPUT": IDS_TMP,
+        },
     )
 
     validate_sql_output_contract(
@@ -1145,7 +1371,7 @@ def run_pipeline() -> None:
             conn.execute("ROLLBACK")
             raise
 
-        run_sql_pipeline(conn)
+        run_sql_pipeline(conn, inputs)
 
         attach_metadata_ids(
             conn,
@@ -1172,6 +1398,8 @@ def run_pipeline() -> None:
             )
 
         validate_final_database(conn, parquet_count)
+
+        save_cleaning_threshold_baselines(conn)
 
         for ingestion_id in ingestion_ids.values():
             update_run_status(
