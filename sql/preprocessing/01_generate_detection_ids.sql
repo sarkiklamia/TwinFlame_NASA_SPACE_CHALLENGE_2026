@@ -3,10 +3,10 @@
 -- PyroSync — Deterministic Detection ID Generation
 --
 -- Input:
---   data/processed/cleaned/cleaned_detections.parquet
+--   {{STANDARDIZED_INPUT}}
 --
 -- Output:
---   data/processed/cleaned/detections_with_ids.tmp.parquet
+--   {{IDENTIFIED_OUTPUT}}
 --
 -- ID:
 --   Deterministic, positive BIGINT
@@ -17,7 +17,7 @@ COPY (
     WITH source_data AS (
         SELECT *
         FROM read_parquet(
-            'data/processed/cleaned/cleaned_detections.parquet'
+            '{{STANDARDIZED_INPUT}}'
         )
     ),
 
@@ -90,7 +90,7 @@ COPY (
     SELECT *
     FROM identified
 
-) TO 'data/processed/cleaned/detections_with_ids.tmp.parquet'
+) TO '{{IDENTIFIED_OUTPUT}}'
 (FORMAT PARQUET, COMPRESSION ZSTD);
 
 
@@ -108,7 +108,7 @@ SELECT
     MAX(detection_id) AS maximum_id
 
 FROM read_parquet(
-    'data/processed/cleaned/detections_with_ids.tmp.parquet'
+    '{{IDENTIFIED_OUTPUT}}'
 );
 
 
@@ -123,7 +123,7 @@ SELECT
         AS duplicate_id_count
 
 FROM read_parquet(
-    'data/processed/cleaned/detections_with_ids.tmp.parquet'
+    '{{IDENTIFIED_OUTPUT}}'
 );
 
 
@@ -135,14 +135,14 @@ SELECT
     (
         SELECT COUNT(*)
         FROM read_parquet(
-            'data/processed/cleaned/cleaned_detections.parquet'
+            '{{STANDARDIZED_INPUT}}'
         )
     ) AS original_rows,
 
     (
         SELECT COUNT(*)
         FROM read_parquet(
-            'data/processed/cleaned/detections_with_ids.tmp.parquet'
+            '{{IDENTIFIED_OUTPUT}}'
         )
     ) AS output_rows;
 
@@ -154,7 +154,7 @@ SELECT
 DESCRIBE
 SELECT *
 FROM read_parquet(
-    'data/processed/cleaned/detections_with_ids.tmp.parquet'
+    '{{IDENTIFIED_OUTPUT}}'
 );
 
 
@@ -172,7 +172,7 @@ SELECT
     frp_mw
 
 FROM read_parquet(
-    'data/processed/cleaned/detections_with_ids.tmp.parquet'
+    '{{IDENTIFIED_OUTPUT}}'
 )
 
 LIMIT 10;

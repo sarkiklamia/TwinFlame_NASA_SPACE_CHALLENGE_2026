@@ -37,6 +37,18 @@ CREATE TABLE IF NOT EXISTS PROCESSING_RUNS (
         REFERENCES SOURCE_FILES(file_id)
 );
 
+CREATE TABLE IF NOT EXISTS CLEANING_THRESHOLD_BASELINES (
+    source VARCHAR NOT NULL,
+    satellite VARCHAR NOT NULL,
+    metric VARCHAR NOT NULL,
+    observation_count BIGINT,
+    lower_percentile DOUBLE,
+    q1 DOUBLE,
+    q3 DOUBLE,
+    updated_at TIMESTAMP,
+    PRIMARY KEY (source, satellite, metric)
+);
+
 CREATE TABLE IF NOT EXISTS UNIFIED_DETECTIONS (
     detection_id BIGINT PRIMARY KEY,
     file_id BIGINT,

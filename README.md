@@ -3,18 +3,18 @@ Harmonization of MODIS and VIIRS Hot Spots
 
 ## Dashboard
 
-The Overview dashboard is a React + Vite frontend backed by a read-only FastAPI
-API. It summarizes unified detections, harmonized activity clusters,
-correspondences, and processing runs from the configured DuckDB database.
+See [guide.md](guide.md) for the complete Windows runbook covering raw sample
+and archive data, cleaning, API ingestion, Phase 08/09, validation, and DuckDB
+inspection.
 
-1. Install the Python dependencies with `pip install -r requirements.txt`.
-2. Set `DUCKDB_PATH` to the harmonized DuckDB database in `.env`.
-3. Start the API from the repository root with
-   `uvicorn app.backend.main:app --reload`.
-4. With Node.js and npm installed, in `app/frontend` run `npm install` once
-   and `npm run dev`.
-5. Open the Vite URL shown in the terminal (by default
-   `http://127.0.0.1:5173`).
+The frontend is React + Vite and the API is read-only FastAPI. The ingestion
+pipeline writes `UNIFIED_DETECTIONS` to `database/twinflame.duckdb`; Phase 08/09
+write the `harm_*` tables to a separate run-specific DuckDB under
+`data/processed/harmonization/phase_08/<run-id>/harmonization.duckdb`. The
+backend currently has one `DUCKDB_PATH` setting, so it needs dual-database
+reading (or an explicit combined read-only snapshot) before all live ingestion
+and harmonization views can work together. The setup commands are in the guide;
+start the dashboard after that database wiring is in place.
 
 The Overview supports date range, satellite/platform, geographic region,
 day/night, and fire radiative power filters. A missing database or an

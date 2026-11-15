@@ -18,6 +18,12 @@ __pycache__/
 # Virtual environments
 .venv/
 venv/
+
+# Share only the reusable Phase 05 instructions and empty label templates.
+# Generated review queues, manifests, and all other run data stay local.
+!data/validation/README.md
+!data/validation/candidate_recall_reference_pairs.csv
+!data/validation/activity_reference_labels.csv
 ENV/
 env/
 .direnv/
@@ -77,6 +83,14 @@ data/**
 !data/**/
 !data/**/.gitkeep
 
+# Local pipeline and calibration outputs accidentally written at repository root.
+# Source code and documentation remain trackable.
+/july_2026_*.csv
+/phase03_candidate_counts_*.csv
+/phase04a_screening_*.csv
+*.parquet
+.pytest-tmp-*/
+
 # Local databases and DuckDB spill files (schema.sql stays tracked)
 database/*.duckdb
 database/*.db
@@ -109,3 +123,24 @@ wheelhouse/
 
 # Local-only configuration (do not use for shareable project configuration)
 *.local
+
+
+# All CSV files
+*.csv
+# Python generated files
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Allow the reusable validation instructions and empty input templates only.
+# The generated review queue and all other run data remain ignored.
+!data/validation/README.md
+!data/validation/candidate_recall_reference_pairs.csv
+!data/validation/activity_reference_labels.csv
+
+# CSV files
+*.csv
+
+# Local data
+data/
