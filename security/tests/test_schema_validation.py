@@ -1,45 +1,31 @@
 
 import csv
-import os
 from datetime import date
-from pathlib import Path
 
 import pytest
 
 
-REQUIRED_COLUMNS = {
-    "latitude",
-    "longitude",
-    "acq_date",
-}
+REQUIRED_COLUMNS = {"latitude", "longitude", "acq_date"}
 
 
 @pytest.fixture
-def records():
-    value = os.getenv("TWINFLAME_SAMPLE_CSV")
+def records(tmp_path):
+    path = tmp_path / "sample.csv"
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=sorted(REQUIRED_COLUMNS))
+        writer.writeheader()
+        writer.writerow({
+            "latitude": "30.0",
+            "longitude": "-9.0",
+            "acq_date": "2026-11-10",
+        })
 
-    if not value:
-        pytest.skip("TWINFLAME_SAMPLE_CSV not configured")
-
-    path = Path(value)
-
-    if not path.is_file():
-        pytest.skip("NASA sample CSV not available")
-
-    with path.open(
-        "r", encoding="utf-8-sig", newline=""
-    ) as file:
+    with path.open("r", newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file)
-        columns = set(reader.fieldnames or [])
-
-        if not REQUIRED_COLUMNS.issubset(columns):
-            pytest.fail("Required NASA columns missing")
-
         rows = list(reader)
+        assert REQUIRED_COLUMNS.issubset(reader.fieldnames or [])
 
-    if not rows:
-        pytest.skip("Sample has no hotspot records")
-
+    assert rows
     return rows
 
 
