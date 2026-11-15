@@ -18,8 +18,10 @@ import {
   Moon,
   RefreshCw,
   Satellite,
+  ShieldCheck,
   SlidersHorizontal,
   Sun,
+  Workflow,
 } from "lucide-react";
 import {
   Area,
@@ -39,6 +41,12 @@ import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
 import MonitoringPage from "./MonitoringPage";
 import GeospatialPage from "./GeospatialPage";
 import AlertsCenter from "./AlertsCenter";
+import FireSeasonPage from "./FireSeasonPage";
+import HistoricalAnalysisPage from "./HistoricalAnalysisPage";
+import SensorComparisonPage from "./SensorComparisonPage";
+import HarmonizationEvaluationPage from "./HarmonizationEvaluationPage";
+import QualityMethodologyPage from "./QualityMethodologyPage";
+import PipelineManagementPage from "./PipelineManagementPage";
 
 type Filters = {
   period: string;
@@ -54,27 +62,28 @@ type Filters = {
 type OverviewData = {
   kpis: {
     total_detections: number;
-    activity_clusters: number;
-    strong_correspondences: number;
-    possible_correspondences: number;
-    unmatched_or_rejected: number;
+    activity_clusters: number | null;
+    strong_correspondences: number | null;
+    possible_correspondences: number | null;
+    unmatched_or_rejected: number | null;
     latest_acquisition: string | null;
   };
   daily_trend: { date: string; detections: number }[];
   platform_counts: { platform: string; detections: number }[];
   correspondence_distribution: {
-    strong: number;
-    possible: number;
-    rejected: number;
-    source: string;
+    strong: number | null;
+    possible: number | null;
+    rejected: number | null;
+    source: string | null;
   };
+  harmonization_available: boolean;
   map: {
     points: {
       id: string;
       latitude: number;
       longitude: number;
       platform: string;
-      date: string;
+      date: string | null;
       frp_mw: number | null;
     }[];
     truncated: boolean;
@@ -155,7 +164,8 @@ function number(value: number | null | undefined) {
   return value == null ? "—" : new Intl.NumberFormat("en-US").format(value);
 }
 
-function compactNumber(value: number) {
+function compactNumber(value: number | null | undefined) {
+  if (value == null) return "—";
   return new Intl.NumberFormat("en-US", {
     notation: value >= 1_000_000 ? "compact" : "standard",
     maximumFractionDigits: 1,
@@ -329,7 +339,7 @@ function OverviewMap({ data }: { data: OverviewData }) {
 
 function App() {
   const [activePage, setActivePage] = useState<
-    "overview" | "monitoring" | "geospatial" | "alerts"
+    "overview" | "monitoring" | "geospatial" | "alerts" | "fire-season" | "historical" | "sensor-comparison" | "harmonization" | "quality-methodology" | "pipeline-management"
   >("overview");
   const [filters, setFilters] = useState(initialFilters);
   const [data, setData] = useState<OverviewData | null>(null);
@@ -386,15 +396,15 @@ function App() {
 
   const distribution = useMemo(
     () => [
-      { name: "Strong", value: data?.correspondence_distribution.strong ?? 0, color: "#80a66f" },
+      { name: "Strong", value: data?.harmonization_available ? data.correspondence_distribution.strong ?? 0 : 0, color: "#80a66f" },
       {
         name: "Possible",
-        value: data?.correspondence_distribution.possible ?? 0,
+        value: data?.harmonization_available ? data.correspondence_distribution.possible ?? 0 : 0,
         color: brand.orange,
       },
       {
         name: "Rejected",
-        value: data?.correspondence_distribution.rejected ?? 0,
+        value: data?.harmonization_available ? data.correspondence_distribution.rejected ?? 0 : 0,
         color: "#8d321d",
       },
     ],
@@ -429,10 +439,15 @@ function App() {
             <span>Overview</span>
             {activePage === "overview" && <span className="nav-active-mark" />}
           </button>
-          <button className="nav-item" type="button" disabled title="Coming soon">
-            <Link2 size={17} />
-            <span>Correspondences</span>
-            <span className="nav-soon">SOON</span>
+          <button
+            className={`nav-item ${activePage === "monitoring" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("monitoring")}
+            aria-current={activePage === "monitoring" ? "page" : undefined}
+          >
+            <Satellite size={17} />
+            <span>Near Real-Time Monitoring</span>
+            {activePage === "monitoring" && <span className="nav-active-mark" />}
           </button>
           <button
             className={`nav-item ${activePage === "geospatial" ? "active" : ""}`}
@@ -441,18 +456,8 @@ function App() {
             aria-current={activePage === "geospatial" ? "page" : undefined}
           >
             <Globe2 size={17} />
-            <span>Geospatial explore</span>
+            <span>Geospatial Exploration</span>
             {activePage === "geospatial" && <span className="nav-active-mark" />}
-          </button>
-          <button
-            className={`nav-item ${activePage === "monitoring" ? "active" : ""}`}
-            type="button"
-            onClick={() => setActivePage("monitoring")}
-            aria-current={activePage === "monitoring" ? "page" : undefined}
-          >
-            <Satellite size={17} />
-            <span>Live monitoring</span>
-            {activePage === "monitoring" && <span className="nav-active-mark" />}
           </button>
           <button
             className={`nav-item ${activePage === "alerts" ? "active" : ""}`}
@@ -461,8 +466,69 @@ function App() {
             aria-current={activePage === "alerts" ? "page" : undefined}
           >
             <Bell size={17} />
-            <span>Alerts center</span>
+            <span>Alerts Center</span>
             {activePage === "alerts" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "fire-season" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("fire-season")}
+            aria-current={activePage === "fire-season" ? "page" : undefined}
+          >
+            <Flame size={17} />
+            <span>Fire Season Monitor</span>
+            {activePage === "fire-season" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "historical" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("historical")}
+            aria-current={activePage === "historical" ? "page" : undefined}
+          >
+            <Clock3 size={17} />
+            <span>Historical Fire Analysis</span>
+            {activePage === "historical" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "sensor-comparison" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("sensor-comparison")}
+            aria-current={activePage === "sensor-comparison" ? "page" : undefined}
+          >
+            <SlidersHorizontal size={17} />
+            <span>Sensor Comparison</span>
+            {activePage === "sensor-comparison" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "harmonization" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("harmonization")}
+            aria-current={activePage === "harmonization" ? "page" : undefined}
+          >
+            <Link2 size={17} />
+            <span>Harmonization Evaluation</span>
+            {activePage === "harmonization" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "quality-methodology" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("quality-methodology")}
+            aria-current={activePage === "quality-methodology" ? "page" : undefined}
+          >
+            <ShieldCheck size={17} />
+            <span>Quality &amp; Methodology</span>
+            {activePage === "quality-methodology" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "pipeline-management" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("pipeline-management")}
+            aria-current={activePage === "pipeline-management" ? "page" : undefined}
+            title="10. Pipeline Management"
+          >
+            <Workflow size={17} />
+            <span>Pipeline Management</span>
+            {activePage === "pipeline-management" && <span className="nav-active-mark" />}
           </button>
         </nav>
 
@@ -497,10 +563,22 @@ function App() {
               {activePage === "overview"
                 ? "Overview"
                 : activePage === "monitoring"
-                  ? "Live monitoring"
+                  ? "Near Real-Time Monitoring"
                   : activePage === "geospatial"
-                    ? "Geospatial exploration"
-                    : "Alerts center"}
+                    ? "Geospatial Exploration"
+                    : activePage === "alerts"
+                      ? "Alerts Center"
+                      : activePage === "fire-season"
+                        ? "Fire Season Monitor"
+                        : activePage === "historical"
+                          ? "Historical Fire Analysis"
+                          : activePage === "sensor-comparison"
+                            ? "Sensor Comparison"
+                            : activePage === "harmonization"
+                              ? "Harmonization Evaluation"
+                              : activePage === "quality-methodology"
+                                ? "Quality & Methodology"
+                                : "Pipeline Management"}
             </strong>
           </div>
           <div className="topbar-right">
@@ -521,10 +599,22 @@ function App() {
         <div className="page-wrap">
           {activePage === "monitoring" ? (
             <MonitoringPage />
+          ) : activePage === "fire-season" ? (
+            <FireSeasonPage />
           ) : activePage === "alerts" ? (
             <AlertsCenter />
           ) : activePage === "geospatial" ? (
             <GeospatialPage />
+          ) : activePage === "historical" ? (
+            <HistoricalAnalysisPage />
+          ) : activePage === "sensor-comparison" ? (
+            <SensorComparisonPage />
+          ) : activePage === "harmonization" ? (
+            <HarmonizationEvaluationPage />
+          ) : activePage === "quality-methodology" ? (
+            <QualityMethodologyPage />
+          ) : activePage === "pipeline-management" ? (
+            <PipelineManagementPage />
           ) : (
             <>
           <section className="page-heading">
@@ -734,7 +824,7 @@ function App() {
                 </div>
                 <span className="panel-icon"><Link2 size={16} /></span>
               </div>
-              {data ? (
+              {data?.harmonization_available ? (
                 <>
                   <div className="donut-wrap">
                     {distribution.some((item) => item.value > 0) ? (
@@ -772,9 +862,9 @@ function App() {
                         <div className="donut-center">
                           <strong>
                             {compactNumber(
-                              data.correspondence_distribution.strong +
-                                data.correspondence_distribution.possible +
-                                data.correspondence_distribution.rejected,
+                              (data.correspondence_distribution.strong ?? 0) +
+                                (data.correspondence_distribution.possible ?? 0) +
+                                (data.correspondence_distribution.rejected ?? 0),
                             )}
                           </strong>
                           <span>total matches</span>
@@ -793,14 +883,14 @@ function App() {
                         </span>
                         <strong>{number(item.value)}</strong>
                         <span className="distribution-percent">
-                          {data.correspondence_distribution.strong +
-                            data.correspondence_distribution.possible +
-                            data.correspondence_distribution.rejected
+                          {(data.correspondence_distribution.strong ?? 0) +
+                            (data.correspondence_distribution.possible ?? 0) +
+                            (data.correspondence_distribution.rejected ?? 0)
                             ? `${Math.round(
                                 (item.value /
-                                  (data.correspondence_distribution.strong +
-                                    data.correspondence_distribution.possible +
-                                    data.correspondence_distribution.rejected)) *
+                                  ((data.correspondence_distribution.strong ?? 0) +
+                                    (data.correspondence_distribution.possible ?? 0) +
+                                    (data.correspondence_distribution.rejected ?? 0))) *
                                   100,
                               )}%`
                             : "—"}
@@ -809,6 +899,8 @@ function App() {
                     ))}
                   </div>
                 </>
+              ) : data ? (
+                <EmptyChart label="Harmonization data is not available yet" />
               ) : (
                 <div className="panel-skeleton chart-skeleton" />
               )}

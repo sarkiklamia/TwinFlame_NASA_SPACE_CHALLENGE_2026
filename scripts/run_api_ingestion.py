@@ -13,6 +13,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+    harmonization
 SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
@@ -26,6 +27,12 @@ from harmonization.v3.phases.phase_09_incremental_processing.incremental_runner 
     DEFAULT_PHASE08_ROOT,
     run_phase_09,
 )
+
+
+from config.api_config import get_firms_config, load_sources_yaml
+from ingestion.firms_client import FIRMSClient
+from ingestion.response_handler import ResponseHandler
+ main
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,17 +64,21 @@ def main():
     configured_days = int(
         ingestion_settings.get("default_day_range", 1)
     )
+ harmonization
     harmonization_interval_minutes = float(
         ingestion_settings.get("harmonization_interval_minutes", 60)
     )
+ main
 
     # Include yesterday as well as today.
     day_range = max(2, configured_days)
 
     if interval_minutes <= 0:
         raise ValueError("Polling interval must be positive.")
+ harmonization
     if harmonization_interval_minutes <= 0:
         raise ValueError("Harmonization interval must be positive.")
+ main
 
     if not 1 <= day_range <= 5:
         raise ValueError("FIRMS day_range must be between 1 and 5.")
@@ -84,15 +95,19 @@ def main():
         )
 
     handler = ResponseHandler(config)
+ harmonization
     processor = APIIncrementalProcessor(raw_api_dir=config.raw_api_dir)
+main
 
     signal.signal(signal.SIGINT, request_stop)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, request_stop)
 
     interval_seconds = interval_minutes * 60
+ harmonization
     harmonization_interval_seconds = harmonization_interval_minutes * 60
     last_harmonization_attempt = None
+ main
     cycle = 0
 
     logger.info("Starting worldwide FIRMS ingestion.")
@@ -100,10 +115,12 @@ def main():
     logger.info("Area: world")
     logger.info("Day range: %s days", day_range)
     logger.info("Polling interval: %s minutes", interval_minutes)
+ harmonization
     logger.info(
         "Phase 09 harmonization interval: %s minutes",
         harmonization_interval_minutes,
     )
+ main
     logger.info("Requests per cycle: %s", len(sources))
 
     with FIRMSClient(config) as client:
@@ -164,6 +181,7 @@ def main():
                         source.key,
                     )
 
+harmonization
             # Import every completed response file, including files left
             # pending by an earlier interrupted or failed processing cycle.
             processing_completed = False
@@ -214,6 +232,7 @@ def main():
                 finally:
                     last_harmonization_attempt = time.monotonic()
 
+ main
             elapsed = time.monotonic() - cycle_start
 
             logger.info(
