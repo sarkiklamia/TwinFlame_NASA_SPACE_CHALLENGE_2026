@@ -44,3 +44,6 @@ pyyaml
 pytest
 httpx            # required by FastAPI's TestClient
 ruff
+
+authlib
+itsdangerous
