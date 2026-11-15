@@ -67,25 +67,13 @@ REGION_BOUNDS = {
     "oceania": (110.0, -50.0, 180.0, 0.0),
     "south-america": (-85.0, -57.0, -30.0, 14.0),
 }
-REQUIRED_TABLES = {
-    "unified_detections",
+HARMONIZATION_TABLES = {
     "harm_activity_clusters",
     "harm_cluster_members",
     "harm_correspondence_edges",
     "harm_correspondence_summary",
     "harm_run_metadata",
 }
-ACQUISITION_TIMESTAMP = """
-    acq_date + COALESCE(
-        TRY_CAST(
-            TRY_STRPTIME(
-                LPAD(REGEXP_REPLACE(COALESCE(acq_time, ''), '[^0-9]', '', 'g'), 4, '0'),
-                '%H%M'
-            ) AS TIME
-        ),
-        TIME '00:00:00'
-    )
-"""
 
 app = FastAPI(title="TwinFlame Dashboard API", version="1.0.0")
 app.add_middleware(
@@ -108,6 +96,44 @@ def _platform_condition(platform: str, column: str) -> str:
     return f"({compact} LIKE '%{platform.upper()}%')"
 
 
+def _column_ref(alias: str, column: str | None, fallback: str = "NULL") -> str:
+    """Return a safely quoted column reference for dynamically inspected schemas."""
+    return f"{alias}.{_quoted_identifier(column)}" if column else fallback
+
+
+def _temporal_expressions(
+    columns: dict[str, str], alias: str = "d"
+) -> tuple[str | None, str | None]:
+    """Return date and timestamp SQL for canonical or legacy detection schemas."""
+    timestamp_column = _find_column(
+        columns, "acquisition_time_utc", "acquisition_timestamp"
+    )
+    if timestamp_column:
+        timestamp_ref = _column_ref(alias, timestamp_column)
+        timestamp_expr = f"TRY_CAST({timestamp_ref} AS TIMESTAMP)"
+        return f"TRY_CAST({timestamp_ref} AS DATE)", timestamp_expr
+
+    date_column = _find_column(columns, "acq_date", "acquisition_date")
+    if date_column is None:
+        return None, None
+    date_ref = _column_ref(alias, date_column)
+    date_expr = f"TRY_CAST({date_ref} AS DATE)"
+    time_column = _find_column(columns, "acq_time", "acquisition_time")
+    if time_column is None:
+        return date_expr, f"TRY_CAST({date_expr} AS TIMESTAMP)"
+    time_ref = _column_ref(alias, time_column)
+    time_digits = (
+        f"LPAD(REGEXP_REPLACE(COALESCE(CAST({time_ref} AS VARCHAR), ''), "
+        "'[^0-9]', '', 'g'), 4, '0')"
+    )
+    timestamp_expr = (
+        f"({date_expr} + COALESCE("
+        f"TRY_CAST(TRY_STRPTIME({time_digits}, '%H%M') AS TIME), "
+        "TIME '00:00:00'))"
+    )
+    return date_expr, timestamp_expr
+
+
 def _filtered_detections(
     *,
     period: Period,
@@ -119,19 +145,48 @@ def _filtered_detections(
     start_date: date | None,
     end_date: date | None,
     now: datetime,
+    detection_columns: dict[str, str],
 ) -> tuple[str, list[object]]:
     conditions: list[str] = []
     parameters: list[object] = []
+    date_expr, acquisition_timestamp_expr = _temporal_expressions(
+        detection_columns, "u"
+    )
+    if date_expr is None or acquisition_timestamp_expr is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "UNIFIED_DETECTIONS must include acquisition_time_utc or the "
+                "legacy acq_date/acq_time fields."
+            ),
+        )
+    platform_column = _find_column(detection_columns, "platform", "satellite")
+    source_column = _find_column(detection_columns, "source", "source_name")
+    latitude_column = _find_column(detection_columns, "latitude", "lat")
+    longitude_column = _find_column(detection_columns, "longitude", "lon", "lng")
+    daynight_column = _find_column(detection_columns, "daynight", "day_night")
+    frp_column = _find_column(detection_columns, "frp_mw", "frp")
+    detection_id_column = _find_column(detection_columns, "detection_id", "id")
+    if not all((detection_id_column, latitude_column, longitude_column)):
+        raise HTTPException(
+            status_code=503,
+            detail="UNIFIED_DETECTIONS is missing detection identifiers or coordinates.",
+        )
+    date_condition = date_expr
+    platform_ref = _column_ref("u", platform_column)
+    source_ref = _column_ref("u", source_column)
+    daynight_ref = _column_ref("u", daynight_column)
+    frp_ref = _column_ref("u", frp_column)
 
     if period == "today":
-        conditions.append("acq_date = ?")
+        conditions.append(f"{date_condition} = ?")
         parameters.append(now.date())
     elif period == "24h":
-        conditions.append(f"{ACQUISITION_TIMESTAMP} BETWEEN ? AND ?")
+        conditions.append(f"{acquisition_timestamp_expr} BETWEEN ? AND ?")
         parameters.extend((now - timedelta(hours=24), now))
     elif period in ("7d", "30d"):
         days = 6 if period == "7d" else 29
-        conditions.append("acq_date >= ?")
+        conditions.append(f"{date_condition} >= ?")
         parameters.append(now.date() - timedelta(days=days))
     elif period == "custom":
         if start_date is None or end_date is None:
@@ -144,16 +199,16 @@ def _filtered_detections(
                 status_code=422,
                 detail="start_date must be on or before end_date.",
             )
-        conditions.extend(("acq_date >= ?", "acq_date <= ?"))
+        conditions.extend((f"{date_condition} >= ?", f"{date_condition} <= ?"))
         parameters.extend((start_date, end_date))
 
     if period != "all" and period != "custom" and period != "24h":
-        conditions.append("acq_date <= ?")
+        conditions.append(f"{date_condition} <= ?")
         parameters.append(now.date())
 
     platform_clauses = [
-        _platform_condition(platform, "platform"),
-        _platform_condition(platform, "source"),
+        _platform_condition(platform, platform_ref),
+        _platform_condition(platform, source_ref),
     ]
     platform_clauses = [clause for clause in platform_clauses if clause]
     if platform_clauses:
@@ -161,27 +216,34 @@ def _filtered_detections(
 
     if region != "global":
         west, south, east, north = REGION_BOUNDS[region]
-        conditions.append("longitude BETWEEN ? AND ? AND latitude BETWEEN ? AND ?")
+        conditions.append(
+            f"{_column_ref('u', longitude_column)} BETWEEN ? AND ? AND "
+            f"{_column_ref('u', latitude_column)} BETWEEN ? AND ?"
+        )
         parameters.extend((west, east, south, north))
 
     if daynight == "day":
-        conditions.append("UPPER(COALESCE(daynight, '')) IN ('D', 'DAY')")
+        conditions.append(f"UPPER(COALESCE({daynight_ref}, '')) IN ('D', 'DAY')")
     elif daynight == "night":
-        conditions.append("UPPER(COALESCE(daynight, '')) IN ('N', 'NIGHT')")
+        conditions.append(f"UPPER(COALESCE({daynight_ref}, '')) IN ('N', 'NIGHT')")
 
     if frp_min is not None:
-        conditions.append("frp_mw >= ?")
+        conditions.append(f"{frp_ref} >= ?")
         parameters.append(frp_min)
     if frp_max is not None:
-        conditions.append("frp_mw <= ?")
+        conditions.append(f"{frp_ref} <= ?")
         parameters.append(frp_max)
 
     where_clause = " AND ".join(conditions) if conditions else "TRUE"
     query = f"""
-        SELECT detection_id, platform, source, latitude, longitude, acq_date,
-               acq_time, frp_mw, daynight,
-               {ACQUISITION_TIMESTAMP} AS acquisition_timestamp
-        FROM UNIFIED_DETECTIONS
+        SELECT {_column_ref('u', detection_id_column)} AS detection_id,
+               {platform_ref} AS platform, {source_ref} AS source,
+               {_column_ref('u', latitude_column)} AS latitude,
+               {_column_ref('u', longitude_column)} AS longitude,
+               {date_expr} AS acq_date,
+               {frp_ref} AS frp_mw, {daynight_ref} AS daynight,
+               {acquisition_timestamp_expr} AS acquisition_timestamp
+        FROM UNIFIED_DETECTIONS u
         WHERE {where_clause}
     """
     return query, parameters
@@ -225,18 +287,22 @@ def _summary_date_conditions(
     return conditions, parameters
 
 
-def _require_tables(connection: duckdb.DuckDBPyConnection) -> None:
-    available = {row[0].lower() for row in connection.execute("SHOW TABLES").fetchall()}
-    missing = sorted(REQUIRED_TABLES - available)
-    if missing:
+def _available_tables(connection: duckdb.DuckDBPyConnection) -> dict[str, str]:
+    return {
+        str(row[0]).lower(): str(row[0])
+        for row in connection.execute("SHOW TABLES").fetchall()
+    }
+
+
+def _require_detection_table(connection: duckdb.DuckDBPyConnection) -> str:
+    available = _available_tables(connection)
+    detection_table = available.get("unified_detections")
+    if detection_table is None:
         raise HTTPException(
             status_code=503,
-            detail=(
-                "The dashboard database is missing required tables: "
-                + ", ".join(missing)
-                + ". Complete the standardization and harmonization pipeline first."
-            ),
+            detail="The dashboard database is missing UNIFIED_DETECTIONS. Run the cleaning and standardization pipeline first.",
         )
+    return detection_table
 
 
 def _dashboard_payload(
@@ -253,10 +319,15 @@ def _dashboard_payload(
     start_date: date | None,
     end_date: date | None,
     now: datetime,
+    harmonization_available: bool,
 ) -> dict[str, object]:
-    latest_run = _latest_successful_run_cte()
+    latest_run = _latest_successful_run_cte() if harmonization_available else ""
     filtered_cte = f"filtered_detections AS ({filtered_sql})"
-    ctes = f"WITH {filtered_cte}, {latest_run}"
+    ctes = (
+        f"WITH {filtered_cte}, {latest_run}"
+        if latest_run
+        else f"WITH {filtered_cte}"
+    )
 
     totals = connection.execute(
         f"""
@@ -273,6 +344,7 @@ def _dashboard_payload(
         {ctes}
         SELECT acq_date, COUNT(DISTINCT detection_id)
         FROM filtered_detections
+        WHERE acq_date IS NOT NULL
         GROUP BY acq_date
         ORDER BY acq_date
         """,
@@ -290,99 +362,106 @@ def _dashboard_payload(
         filter_parameters,
     ).fetchall()
 
-    cluster_count = connection.execute(
-        f"""
-        {ctes}
-        SELECT COUNT(DISTINCT c.activity_cluster_id)
-        FROM harm_activity_clusters c
-        JOIN latest_successful_run lr ON c.run_id = lr.run_id
-        JOIN harm_cluster_members m
-          ON m.activity_cluster_id = c.activity_cluster_id
-         AND m.run_id = c.run_id
-        JOIN filtered_detections d ON d.detection_id = m.detection_id
-        """,
-        filter_parameters,
-    ).fetchone()[0]
-
-    needs_edge_filtering = (
-        period == "24h"
-        or region != "global"
-        or daynight != "all"
-        or frp_min is not None
-        or frp_max is not None
-    )
-    if needs_edge_filtering:
-        edge_counts = connection.execute(
+    cluster_count: int | None = None
+    strong_count: int | None = None
+    possible_count: int | None = None
+    rejected_count: int | None = None
+    unmatched_count: int | None = None
+    correspondence_source: str | None = None
+    if harmonization_available:
+        cluster_count = connection.execute(
             f"""
             {ctes}
-            SELECT UPPER(TRIM(COALESCE(e.decision_class, 'UNKNOWN'))), COUNT(*)
-            FROM harm_correspondence_edges e
-            JOIN latest_successful_run lr ON e.run_id = lr.run_id
-            WHERE EXISTS (
-                SELECT 1
-                FROM filtered_detections d
-                WHERE d.detection_id = e.detection_id_a
-                   OR d.detection_id = e.detection_id_b
-            )
-            GROUP BY 1
+            SELECT COUNT(DISTINCT c.activity_cluster_id)
+            FROM harm_activity_clusters c
+            JOIN latest_successful_run lr ON c.run_id = lr.run_id
+            JOIN harm_cluster_members m
+              ON m.activity_cluster_id = c.activity_cluster_id
+             AND m.run_id = c.run_id
+            JOIN filtered_detections d ON d.detection_id = m.detection_id
             """,
             filter_parameters,
-        ).fetchall()
-        correspondence_source = "filtered_edges"
-    else:
-        summary_conditions, summary_parameters = _summary_date_conditions(
-            period, now, start_date, end_date
+        ).fetchone()[0]
+
+        needs_edge_filtering = (
+            period == "24h"
+            or region != "global"
+            or daynight != "all"
+            or frp_min is not None
+            or frp_max is not None
         )
-        pair_condition = _platform_condition(platform, "platform_pair")
-        if pair_condition:
-            summary_conditions.append(pair_condition)
-        summary_where = (
-            " AND ".join(summary_conditions) if summary_conditions else "TRUE"
-        )
-        edge_counts = connection.execute(
+        if needs_edge_filtering:
+            edge_counts = connection.execute(
+                f"""
+                {ctes}
+                SELECT UPPER(TRIM(COALESCE(e.decision_class, 'UNKNOWN'))), COUNT(*)
+                FROM harm_correspondence_edges e
+                JOIN latest_successful_run lr ON e.run_id = lr.run_id
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM filtered_detections d
+                    WHERE d.detection_id = e.detection_id_a
+                       OR d.detection_id = e.detection_id_b
+                )
+                GROUP BY 1
+                """,
+                filter_parameters,
+            ).fetchall()
+            correspondence_source = "filtered_edges"
+        else:
+            summary_conditions, summary_parameters = _summary_date_conditions(
+                period, now, start_date, end_date
+            )
+            pair_condition = _platform_condition(platform, "platform_pair")
+            if pair_condition:
+                summary_conditions.append(pair_condition)
+            summary_where = (
+                " AND ".join(summary_conditions) if summary_conditions else "TRUE"
+            )
+            edge_counts = connection.execute(
+                f"""
+                WITH {latest_run}
+                SELECT 'STRONG', COALESCE(SUM(s.strong_count), 0)
+                FROM harm_correspondence_summary s
+                JOIN latest_successful_run lr ON s.run_id = lr.run_id
+                WHERE {summary_where}
+                UNION ALL
+                SELECT 'POSSIBLE', COALESCE(SUM(s.possible_count), 0)
+                FROM harm_correspondence_summary s
+                JOIN latest_successful_run lr ON s.run_id = lr.run_id
+                WHERE {summary_where}
+                UNION ALL
+                SELECT 'REJECTED', COALESCE(SUM(s.rejected_count), 0)
+                FROM harm_correspondence_summary s
+                JOIN latest_successful_run lr ON s.run_id = lr.run_id
+                WHERE {summary_where}
+                """,
+                summary_parameters * 3,
+            ).fetchall()
+            correspondence_source = "daily_summary"
+
+        correspondence_counts = {
+            str(row[0]).upper(): int(row[1] or 0) for row in edge_counts
+        }
+        strong_count = correspondence_counts.get("STRONG", 0)
+        possible_count = correspondence_counts.get("POSSIBLE", 0)
+        rejected_count = correspondence_counts.get("REJECTED", 0)
+
+        unmatched_count = connection.execute(
             f"""
-            WITH {latest_run}
-            SELECT 'STRONG', COALESCE(SUM(s.strong_count), 0)
-            FROM harm_correspondence_summary s
-            JOIN latest_successful_run lr ON s.run_id = lr.run_id
-            WHERE {summary_where}
-            UNION ALL
-            SELECT 'POSSIBLE', COALESCE(SUM(s.possible_count), 0)
-            FROM harm_correspondence_summary s
-            JOIN latest_successful_run lr ON s.run_id = lr.run_id
-            WHERE {summary_where}
-            UNION ALL
-            SELECT 'REJECTED', COALESCE(SUM(s.rejected_count), 0)
-            FROM harm_correspondence_summary s
-            JOIN latest_successful_run lr ON s.run_id = lr.run_id
-            WHERE {summary_where}
+            {ctes}
+            SELECT COUNT(DISTINCT d.detection_id)
+            FROM filtered_detections d
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM harm_correspondence_edges e
+                JOIN latest_successful_run lr ON e.run_id = lr.run_id
+                WHERE UPPER(TRIM(COALESCE(e.decision_class, ''))) IN ('STRONG', 'POSSIBLE')
+                  AND (e.detection_id_a = d.detection_id OR e.detection_id_b = d.detection_id)
+            )
             """,
-            summary_parameters * 3,
-        ).fetchall()
-        correspondence_source = "daily_summary"
-
-    correspondence_counts = {
-        str(row[0]).upper(): int(row[1] or 0) for row in edge_counts
-    }
-    strong_count = correspondence_counts.get("STRONG", 0)
-    possible_count = correspondence_counts.get("POSSIBLE", 0)
-    rejected_count = correspondence_counts.get("REJECTED", 0)
-
-    unmatched_count = connection.execute(
-        f"""
-        {ctes}
-        SELECT COUNT(DISTINCT d.detection_id)
-        FROM filtered_detections d
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM harm_correspondence_edges e
-            JOIN latest_successful_run lr ON e.run_id = lr.run_id
-            WHERE UPPER(TRIM(COALESCE(e.decision_class, ''))) IN ('STRONG', 'POSSIBLE')
-              AND (e.detection_id_a = d.detection_id OR e.detection_id_b = d.detection_id)
-        )
-        """,
-        filter_parameters,
-    ).fetchone()[0]
+            filter_parameters,
+        ).fetchone()[0]
 
     map_rows = connection.execute(
         f"""
@@ -401,30 +480,34 @@ def _dashboard_payload(
             "latitude": float(row[1]),
             "longitude": float(row[2]),
             "platform": row[3] or "Unknown",
-            "date": row[4].isoformat(),
+            "date": row[4].isoformat() if row[4] is not None else None,
             "frp_mw": float(row[5]) if row[5] is not None else None,
         }
         for row in map_rows[:1200]
     ]
     map_truncated = len(map_rows) > 1200
 
-    run_rows = connection.execute(
-        """
-        SELECT r.run_id, r.status, r.started_at_utc, r.duration_seconds,
-               r.input_count, r.activity_cluster_count, r.correspondence_edge_count
-        FROM harm_run_metadata r
-        ORDER BY COALESCE(r.finished_at_utc, r.started_at_utc) DESC
-        LIMIT 5
-        """
-    ).fetchall()
+    run_rows = (
+        connection.execute(
+            """
+            SELECT r.run_id, r.status, r.started_at_utc, r.duration_seconds,
+                   r.input_count, r.activity_cluster_count, r.correspondence_edge_count
+            FROM harm_run_metadata r
+            ORDER BY COALESCE(r.finished_at_utc, r.started_at_utc) DESC
+            LIMIT 5
+            """
+        ).fetchall()
+        if harmonization_available
+        else []
+    )
 
     return {
         "kpis": {
             "total_detections": int(total_detections or 0),
-            "activity_clusters": int(cluster_count or 0),
+            "activity_clusters": int(cluster_count) if cluster_count is not None else None,
             "strong_correspondences": strong_count,
             "possible_correspondences": possible_count,
-            "unmatched_or_rejected": int(unmatched_count or 0),
+            "unmatched_or_rejected": int(unmatched_count) if unmatched_count is not None else None,
             "latest_acquisition": latest_acquisition.isoformat() + "Z"
             if latest_acquisition is not None
             else None,
@@ -442,6 +525,7 @@ def _dashboard_payload(
             "rejected": rejected_count,
             "source": correspondence_source,
         },
+        "harmonization_available": harmonization_available,
         "map": {"points": map_points, "truncated": map_truncated},
         "recent_runs": [
             {
@@ -500,7 +584,12 @@ def overview(
 
     try:
         with duckdb.connect(str(database_path), read_only=True) as connection:
-            _require_tables(connection)
+            detection_table = _require_detection_table(connection)
+            detection_columns = _table_columns(connection, detection_table)
+            available_tables = _available_tables(connection)
+            harmonization_available = HARMONIZATION_TABLES.issubset(
+                available_tables
+            )
             filtered_sql, filter_parameters = _filtered_detections(
                 period=period,
                 platform=platform,
@@ -511,6 +600,7 @@ def overview(
                 start_date=start_date,
                 end_date=end_date,
                 now=now,
+                detection_columns=detection_columns,
             )
             return _dashboard_payload(
                 connection,
@@ -525,6 +615,7 @@ def overview(
                 start_date=start_date,
                 end_date=end_date,
                 now=now,
+                harmonization_available=harmonization_available,
             )
     except duckdb.Error:
         logger.exception("Failed to query the TwinFlame dashboard database.")
@@ -659,17 +750,16 @@ def monitoring(
 
             columns = _table_columns(connection, detection_table)
             id_column = _find_column(columns, "detection_id", "id")
-            date_column = _find_column(columns, "acq_date", "acquisition_date")
-            if id_column is None or date_column is None:
+            date_expr, acquisition_expr = _temporal_expressions(columns, "d")
+            if id_column is None or date_expr is None or acquisition_expr is None:
                 raise HTTPException(
                     status_code=503,
-                    detail="UNIFIED_DETECTIONS must include detection_id and acq_date.",
+                    detail="UNIFIED_DETECTIONS must include detection_id and acquisition_time_utc.",
                 )
 
             def dcol(column: str | None, fallback: str = "NULL") -> str:
                 return f"d.{_quoted_identifier(column)}" if column else fallback
 
-            time_column = _find_column(columns, "acq_time", "acquisition_time")
             platform_column = _find_column(columns, "platform", "satellite")
             source_column = _find_column(columns, "source", "source_name")
             sensor_column = _find_column(columns, "instrument", "sensor", "source")
@@ -684,18 +774,6 @@ def monitoring(
                 columns, "detection_status", "processing_status", "status"
             )
 
-            date_expr = f"TRY_CAST({dcol(date_column)} AS DATE)"
-            time_digits = (
-                f"LPAD(REGEXP_REPLACE(COALESCE(CAST({dcol(time_column)} AS VARCHAR), ''), "
-                "'[^0-9]', '', 'g'), 4, '0')"
-                if time_column
-                else "'0000'"
-            )
-            acquisition_expr = (
-                f"({date_expr} + COALESCE("
-                f"TRY_CAST(TRY_STRPTIME({time_digits}, '%H%M') AS TIME), "
-                "TIME '00:00:00'))"
-            )
             platform_expr = (
                 f"COALESCE(NULLIF(TRIM(CAST({dcol(platform_column)} AS VARCHAR)), ''), 'Unknown')"
             )
@@ -858,7 +936,7 @@ def monitoring(
                         {sensor_expr} AS sensor,
                         {date_expr} AS acquisition_date,
                         {acquisition_expr} AS acquisition_timestamp,
-                        {dcol(time_column, "''")} AS acquisition_time,
+                            STRFTIME({acquisition_expr}, '%H%M') AS acquisition_time,
                         {frp_expr} AS frp_mw,
                         {confidence_expr} AS native_confidence,
                         {daynight_expr} AS daynight,
@@ -1225,74 +1303,65 @@ def geospatial(
             detection_table = tables.get("unified_detections")
             cluster_table = tables.get("harm_activity_clusters")
             member_table = tables.get("harm_cluster_members")
-            if not detection_table or not cluster_table or not member_table:
+            if not detection_table:
                 raise HTTPException(
                     status_code=503,
-                    detail=(
-                        "Geospatial exploration requires UNIFIED_DETECTIONS, "
-                        "harm_activity_clusters, and harm_cluster_members."
-                    ),
+                    detail="Geospatial exploration requires UNIFIED_DETECTIONS.",
                 )
 
             detection_columns = _table_columns(connection, detection_table)
-            cluster_columns = _table_columns(connection, cluster_table)
-            member_columns = _table_columns(connection, member_table)
-            detection_id = _find_column(detection_columns, "detection_id", "id")
-            acquisition_date = _find_column(
-                detection_columns, "acq_date", "acquisition_date"
+            clusters_available = bool(cluster_table and member_table)
+            cluster_columns = (
+                _table_columns(connection, cluster_table) if cluster_table else {}
             )
+            member_columns = (
+                _table_columns(connection, member_table) if member_table else {}
+            )
+            detection_id = _find_column(detection_columns, "detection_id", "id")
             latitude_column = _find_column(detection_columns, "latitude", "lat")
             longitude_column = _find_column(detection_columns, "longitude", "lon", "lng")
-            cluster_id = _find_column(
-                cluster_columns, "activity_cluster_id", "cluster_id"
-            )
-            member_cluster_id = _find_column(
-                member_columns, "activity_cluster_id", "cluster_id"
-            )
-            member_detection_id = _find_column(
-                member_columns, "detection_id", "member_detection_id"
-            )
-            if not all(
-                (
-                    detection_id,
-                    acquisition_date,
-                    latitude_column,
-                    longitude_column,
-                    cluster_id,
-                    member_cluster_id,
-                    member_detection_id,
+            date_expr, acquisition_expr = _temporal_expressions(detection_columns, "d")
+            if not all((detection_id, date_expr, acquisition_expr, latitude_column, longitude_column)):
+                raise HTTPException(
+                    status_code=503,
+                    detail="UNIFIED_DETECTIONS is missing a detection identifier, acquisition timestamp, or coordinates.",
                 )
+            cluster_id = (
+                _find_column(cluster_columns, "activity_cluster_id", "cluster_id")
+                if clusters_available
+                else None
+            )
+            member_cluster_id = (
+                _find_column(member_columns, "activity_cluster_id", "cluster_id")
+                if clusters_available
+                else None
+            )
+            member_detection_id = (
+                _find_column(member_columns, "detection_id", "member_detection_id")
+                if clusters_available
+                else None
+            )
+            if clusters_available and not all(
+                (cluster_id, member_cluster_id, member_detection_id)
             ):
                 raise HTTPException(
                     status_code=503,
-                    detail="The geospatial database tables are missing required ID, date, or coordinate columns.",
+                    detail="Harmonization cluster tables are missing cluster or detection identifiers.",
                 )
 
             def dcol(column: str | None, fallback: str = "NULL") -> str:
                 return f"d.{_quoted_identifier(column)}" if column else fallback
 
-            time_column = _find_column(detection_columns, "acq_time", "acquisition_time")
             platform_column = _find_column(detection_columns, "platform", "satellite")
             source_column = _find_column(detection_columns, "source", "source_name")
             sensor_column = _find_column(detection_columns, "instrument", "sensor", "source")
             frp_column = _find_column(detection_columns, "frp_mw", "frp")
             daynight_column = _find_column(detection_columns, "daynight", "day_night")
             country_column = _find_column(detection_columns, "country", "country_name")
-            quality_column = _find_column(
-                member_columns, "membership_quality", "quality"
-            )
-
-            date_expr = f"TRY_CAST({dcol(acquisition_date)} AS DATE)"
-            time_digits = (
-                f"LPAD(REGEXP_REPLACE(COALESCE(CAST({dcol(time_column)} AS VARCHAR), ''), "
-                "'[^0-9]', '', 'g'), 4, '0')"
-                if time_column
-                else "'0000'"
-            )
-            acquisition_expr = (
-                f"({date_expr} + COALESCE("
-                f"TRY_CAST(TRY_STRPTIME({time_digits}, '%H%M') AS TIME), "
-                "TIME '00:00:00'))"
+            quality_column = (
+                _find_column(member_columns, "membership_quality", "quality")
+                if clusters_available
+                else None
             )
             platform_expr = (
                 f"COALESCE(NULLIF(TRIM(CAST({dcol(platform_column)} AS VARCHAR)), ''), 'Unknown')"
@@ -1477,6 +1546,49 @@ def geospatial(
                 for row in selected_detection_rows[:5000]
             ]
 
+            if not clusters_available:
+                if membership_quality != "all":
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Membership-quality filtering is unavailable until harmonization cluster tables are available.",
+                    )
+                density_bins: dict[tuple[int, int], int] = {}
+                cell_degrees = 0.5
+                for detection in detections:
+                    cell = (
+                        math.floor(detection["latitude"] / cell_degrees),
+                        math.floor(detection["longitude"] / cell_degrees),
+                    )
+                    density_bins[cell] = density_bins.get(cell, 0) + 1
+                density_cells = [
+                    {
+                        "south": latitude_bin * cell_degrees,
+                        "west": longitude_bin * cell_degrees,
+                        "north": (latitude_bin + 1) * cell_degrees,
+                        "east": (longitude_bin + 1) * cell_degrees,
+                        "count": count,
+                    }
+                    for (latitude_bin, longitude_bin), count in density_bins.items()
+                ]
+                return {
+                    "generated_at": _utc_iso(datetime.now(timezone.utc)),
+                    "total_detections": len(selected_detection_rows)
+                    if parsed_aoi is not None
+                    else int(raw_detection_count or 0),
+                    "detections": detections,
+                    "clusters": [],
+                    "density_cells": density_cells,
+                    "size_distribution": [],
+                    "capabilities": {
+                        "country_filter": country_column is not None,
+                        "membership_quality_filter": False,
+                        "cluster_data": False,
+                    },
+                    "cluster_data_available": False,
+                    "truncated": int(raw_detection_count or 0) > 20000
+                    or len(selected_detection_rows) > 5000,
+                }
+
             member_run_id = _find_column(member_columns, "run_id")
             cluster_run_id = _find_column(cluster_columns, "run_id")
             cluster_join = (
@@ -1625,7 +1737,9 @@ def geospatial(
                 "capabilities": {
                     "country_filter": country_column is not None,
                     "membership_quality_filter": quality_column is not None,
+                    "cluster_data": True,
                 },
+                "cluster_data_available": True,
                 "truncated": int(raw_detection_count or 0) > 20000
                 or len(member_rows) > 100000
                 or len(selected_detection_rows) > 5000,
@@ -1686,13 +1800,14 @@ def geospatial_cluster_members(
                     detail="UNIFIED_DETECTIONS is missing a detection identifier.",
                 )
             platform_column = _find_column(detection_columns, "platform", "satellite")
-            date_column = _find_column(detection_columns, "acq_date", "acquisition_date")
-            if not date_column:
+            date_expr, acquisition_timestamp_expr = _temporal_expressions(
+                detection_columns, "d"
+            )
+            if not date_expr or not acquisition_timestamp_expr:
                 raise HTTPException(
                     status_code=503,
-                    detail="UNIFIED_DETECTIONS is missing an acquisition date.",
+                    detail="UNIFIED_DETECTIONS is missing acquisition_time_utc or legacy acquisition fields.",
                 )
-            time_column = _find_column(detection_columns, "acq_time", "acquisition_time")
             frp_column = _find_column(detection_columns, "frp_mw", "frp")
             confidence_column = _find_column(
                 detection_columns, "confidence_native", "native_confidence", "confidence", "confidence_level"
@@ -1716,8 +1831,8 @@ def geospatial_cluster_members(
                 SELECT
                     CAST(d.{_quoted_identifier(detection_id)} AS VARCHAR),
                     {f'CAST(d.{_quoted_identifier(platform_column)} AS VARCHAR)' if platform_column else "'Unknown'"},
-                    {f'CAST(d.{_quoted_identifier(date_column)} AS VARCHAR)' if date_column else "NULL"},
-                    {f'CAST(d.{_quoted_identifier(time_column)} AS VARCHAR)' if time_column else "NULL"},
+                    CAST({date_expr} AS VARCHAR),
+                    STRFTIME({acquisition_timestamp_expr}, '%H%M'),
                     {f'TRY_CAST(d.{_quoted_identifier(frp_column)} AS DOUBLE)' if frp_column else "NULL"},
                     {f'CAST(d.{_quoted_identifier(confidence_column)} AS VARCHAR)' if confidence_column else "NULL"},
                     {f'UPPER(CAST(d.{_quoted_identifier(daynight_column)} AS VARCHAR))' if daynight_column else "NULL"},
@@ -1728,7 +1843,7 @@ def geospatial_cluster_members(
                   ON CAST(d.{_quoted_identifier(detection_id)} AS VARCHAR) =
                      CAST(m.{_quoted_identifier(member_detection_id)} AS VARCHAR)
                 WHERE {member_where}
-                ORDER BY d.{_quoted_identifier(date_column)} DESC
+                ORDER BY {acquisition_timestamp_expr} DESC
                 LIMIT ?
                 """,
                 parameters + [limit],
@@ -1790,11 +1905,11 @@ def fire_season(
 
             columns = _table_columns(connection, detection_table)
             detection_id = _find_column(columns, "detection_id", "id")
-            date_column = _find_column(columns, "acq_date", "acquisition_date")
-            if date_column is None:
+            date_expr, acquisition_timestamp_expr = _temporal_expressions(columns, "d")
+            if date_expr is None or acquisition_timestamp_expr is None:
                 raise HTTPException(
                     status_code=503,
-                    detail="UNIFIED_DETECTIONS is missing an acquisition date.",
+                    detail="UNIFIED_DETECTIONS is missing acquisition_time_utc or legacy acquisition fields.",
                 )
             platform_column = _find_column(columns, "platform", "satellite")
             source_column = _find_column(columns, "source", "source_name")
@@ -1807,7 +1922,6 @@ def fire_season(
             def dcol(column: str | None, fallback: str = "NULL") -> str:
                 return f'd.{_quoted_identifier(column)}' if column else fallback
 
-            date_expr = f"TRY_CAST({dcol(date_column)} AS DATE)"
             frp_expr = f"TRY_CAST({dcol(frp_column)} AS DOUBLE)" if frp_column else "NULL::DOUBLE"
             latitude_expr = (
                 f"TRY_CAST({dcol(latitude_column)} AS DOUBLE)"
@@ -2320,11 +2434,11 @@ def historical_analysis(
 
             columns = _table_columns(connection, detection_table)
             detection_id = _find_column(columns, "detection_id", "id")
-            date_column = _find_column(columns, "acq_date", "acquisition_date")
-            if date_column is None:
+            date_expr, acquisition_timestamp_expr = _temporal_expressions(columns, "d")
+            if date_expr is None or acquisition_timestamp_expr is None:
                 raise HTTPException(
                     status_code=503,
-                    detail="UNIFIED_DETECTIONS is missing an acquisition date.",
+                    detail="UNIFIED_DETECTIONS is missing acquisition_time_utc or legacy acquisition fields.",
                 )
             platform_column = _find_column(columns, "platform", "satellite")
             source_column = _find_column(columns, "source", "source_name")
@@ -2340,7 +2454,6 @@ def historical_analysis(
             def dcol(col: str | None, fallback: str = "NULL") -> str:
                 return f'd.{_quoted_identifier(col)}' if col else fallback
 
-            date_expr = f"TRY_CAST({dcol(date_column)} AS DATE)"
             frp_expr = (
                 f"TRY_CAST({dcol(frp_column)} AS DOUBLE)"
                 if frp_column
@@ -3078,8 +3191,12 @@ def export_historical_analysis(
 
             columns = _table_columns(connection, detection_table)
             detection_id = _find_column(columns, "detection_id", "id")
-            date_column = _find_column(columns, "acq_date", "acquisition_date")
-            time_column = _find_column(columns, "acq_time", "acquisition_time")
+            date_expr, acquisition_timestamp_expr = _temporal_expressions(columns, "d")
+            if date_expr is None or acquisition_timestamp_expr is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="UNIFIED_DETECTIONS is missing acquisition_time_utc or legacy acquisition fields.",
+                )
             platform_column = _find_column(columns, "platform", "satellite")
             source_column = _find_column(columns, "source", "source_name")
             sensor_column = _find_column(columns, "instrument", "sensor", "source")
@@ -3094,7 +3211,6 @@ def export_historical_analysis(
             def dcol(col: str | None, fallback: str = "NULL") -> str:
                 return f'd.{_quoted_identifier(col)}' if col else fallback
 
-            date_expr = f"TRY_CAST({dcol(date_column)} AS DATE)"
             frp_expr = (
                 f"TRY_CAST({dcol(frp_column)} AS DOUBLE)"
                 if frp_column
@@ -3125,11 +3241,7 @@ def export_historical_analysis(
                 if platform_column
                 else "'Unknown'"
             )
-            time_expr = (
-                f"CAST({dcol(time_column)} AS VARCHAR)"
-                if time_column
-                else "''"
-            )
+            time_expr = f"STRFTIME({acquisition_timestamp_expr}, '%H%M')"
 
             conditions: list[str] = [f"{date_expr} IS NOT NULL"]
             parameters: list[object] = []
@@ -3551,12 +3663,11 @@ def sensor_comparison(
 
             columns = _table_columns(connection, detection_table)
             detection_id = _find_column(columns, "detection_id", "id")
-            date_column = _find_column(columns, "acq_date", "acquisition_date")
-            time_column = _find_column(columns, "acq_time", "acquisition_time")
-            if date_column is None:
+            date_expr, acquisition_timestamp_expr = _temporal_expressions(columns, "d")
+            if date_expr is None or acquisition_timestamp_expr is None:
                 raise HTTPException(
                     status_code=503,
-                    detail="UNIFIED_DETECTIONS is missing an acquisition date column.",
+                    detail="UNIFIED_DETECTIONS is missing acquisition_time_utc or legacy acquisition fields.",
                 )
             platform_column = _find_column(columns, "platform", "satellite")
             source_column = _find_column(columns, "source", "source_name")
@@ -3575,7 +3686,6 @@ def sensor_comparison(
             def dcol(col: str | None, fallback: str = "NULL") -> str:
                 return f'd.{_quoted_identifier(col)}' if col else fallback
 
-            date_expr = f"TRY_CAST({dcol(date_column)} AS DATE)"
             latitude_expr = (
                 f"TRY_CAST({dcol(latitude_column)} AS DOUBLE)"
                 if latitude_column
@@ -3606,11 +3716,7 @@ def sensor_comparison(
                 if bright_t31_column
                 else "NULL::DOUBLE"
             )
-            time_val_expr = (
-                f"COALESCE(CAST({dcol(time_column)} AS VARCHAR), '0000')"
-                if time_column
-                else "'0000'"
-            )
+            time_val_expr = f"STRFTIME({acquisition_timestamp_expr}, '%H%M')"
 
             # Build base query conditions
             conditions: list[str] = [f"{date_expr} IS NOT NULL"]
@@ -3919,7 +4025,7 @@ def sensor_comparison(
 
             if latitude_column and longitude_column:
                 # Calculate via proximity matching
-                acq_ts_expr = ACQUISITION_TIMESTAMP
+                acq_ts_expr = acquisition_timestamp_expr
                 try:
                     match_res = connection.execute(
                         f"""

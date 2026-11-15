@@ -456,7 +456,7 @@ export default function HistoricalAnalysisPage() {
         <div className="historical-header-main">
           <div className="historical-badge">
             <span className="badge-pulse" />
-            <span>06 · HISTORICAL FIRE ANALYSIS</span>
+            <span>HISTORICAL FIRE ANALYSIS</span>
           </div>
           <h1>Historical Fire Analysis &amp; Regime Evolution</h1>
           <p className="historical-subtitle">

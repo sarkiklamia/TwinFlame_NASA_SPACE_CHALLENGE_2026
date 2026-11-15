@@ -15,6 +15,8 @@
     --green: #26271e;
     --orange: #f58200;
     --red: #d92d1f;
+    --font-ui: "DM Sans", "Segoe UI", sans-serif;
+    --font-display: Manrope, sans-serif;
 }
 
 * {
@@ -48,7 +50,7 @@ button {
     z-index: 20;
     display: flex;
     flex-direction: column;
-    width: 238px;
+    width: 260px;
     padding: 25px 16px 17px;
     color: #f5f2e9;
     background: radial-gradient(ellipse at 2% 2%, #48574455, transparent 38%), #202b22;
@@ -118,14 +120,14 @@ button {
     align-items: center;
     gap: 11px;
     width: 100%;
-    min-height: 42px;
+    min-height: 44px;
     padding: 0 11px;
     color: #b7c0b4;
     text-align: left;
     background: transparent;
     border: 0;
     border-radius: 8px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
 }
 
@@ -263,7 +265,7 @@ button {
 
 .main-content {
     min-height: 100vh;
-    margin-left: 238px;
+    margin-left: 260px;
 }
 
 .topbar {
@@ -5323,6 +5325,84 @@ h1 {
     box-shadow: 0 4px 16px #00000020;
 }
 
+/* Shared KPI language used by Quality & Methodology and Pipeline Management. */
+.historical-kpi-card .kpi-top,
+.kpi-card .kpi-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.historical-kpi-card .kpi-label,
+.kpi-card .kpi-label {
+    overflow: hidden;
+    color: #a0a596;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.historical-kpi-card .kpi-value,
+.kpi-card .kpi-value {
+    margin-top: 5px;
+    color: #f3efe7;
+    font-family: Manrope, sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -0.8px;
+    line-height: 1.1;
+}
+
+.historical-kpi-card .kpi-subtitle,
+.kpi-card .kpi-subtext {
+    margin-top: 3px;
+    color: #8c9284;
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.historical-kpi-card .kpi-subtitle strong,
+.kpi-card .kpi-subtext strong {
+    color: #e6e1d5;
+}
+
+.kpi-card {
+    min-width: 0;
+    min-height: 105px;
+    padding: 13px 13px 11px;
+    background: #1b2019;
+    border: 1px solid #30362c;
+    border-radius: 9px;
+    box-shadow: 0 4px 16px #00000020;
+}
+
+/* Quality and pipeline use a compact control variant, matching Overview filters. */
+.preset-btn {
+    padding: 4px 8px;
+    color: #a0a596;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.preset-btn:hover {
+    color: #f3efe7;
+    background: #232820;
+}
+
+.preset-btn.active {
+    color: #141712;
+    background: #f58200;
+    font-weight: 700;
+}
+
 .kpi-top {
     display: flex;
     align-items: center;
@@ -8477,5 +8557,106 @@ h1 {
 @media (max-width: 768px) {
     .form-row-2col {
         grid-template-columns: 1fr;
+    }
+}
+
+/* Shared page language: keep secondary workspaces on the Overview rhythm. */
+.historical-page-container,
+.comparison-page-container,
+.harmonization-page-container,
+.quality-page-container,
+.pipeline-page-container {
+    font-family: var(--font-ui);
+}
+
+.historical-header h1,
+.comparison-header h1 {
+    margin: 6px 0 3px;
+    color: #f3efe7;
+    font-family: var(--font-display);
+    font-size: 27px;
+    font-weight: 800;
+    letter-spacing: -1.05px;
+    line-height: 1.15;
+}
+
+.historical-subtitle,
+.comparison-subtitle {
+    color: #a0a596;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.historical-badge,
+.comparison-badge {
+    padding: 0;
+    color: #e9b77e;
+    font-size: 8px;
+    letter-spacing: 1.45px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+}
+
+.historical-badge .badge-pulse,
+.comparison-badge .badge-pulse {
+    width: 6px;
+    height: 6px;
+    background: #f04b22;
+    box-shadow: 0 0 0 3px #f04b2228;
+}
+
+.historical-header,
+.comparison-header {
+    margin-bottom: 2px;
+}
+
+.historical-page-container,
+.comparison-page-container {
+    gap: 20px;
+}
+
+.historical-page-container .action-btn,
+.comparison-page-container .action-btn,
+.harmonization-page-container button {
+    font-size: 12px;
+}
+
+.historical-page-container .historical-filter-bar,
+.comparison-page-container .comparison-filter-bar,
+.harmonization-page-container .historical-filter-bar,
+.quality-page-container .historical-filter-bar,
+.pipeline-page-container .historical-filter-bar {
+    background: #1b2019;
+    border: 1px solid #30362c;
+    border-radius: 9px;
+    box-shadow: 0 4px 16px #00000020;
+}
+
+.historical-page-container .historical-refresh-btn,
+.historical-page-container .historical-download-btn,
+.comparison-page-container .refresh-btn {
+    min-height: 34px;
+    padding: 9px 13px;
+    border-radius: 7px;
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.historical-page-container button:focus-visible,
+.historical-page-container input:focus-visible,
+.historical-page-container select:focus-visible,
+.comparison-page-container button:focus-visible,
+.comparison-page-container input:focus-visible,
+.comparison-page-container select:focus-visible {
+    outline: 2px solid #f58200;
+    outline-offset: 2px;
+}
+
+@media (max-width: 1160px) and (min-width: 851px) {
+    .historical-header h1,
+    .comparison-header h1 {
+        font-size: 24px;
     }
 }
