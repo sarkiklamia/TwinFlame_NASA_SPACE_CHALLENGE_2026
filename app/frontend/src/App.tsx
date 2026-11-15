@@ -18,8 +18,10 @@ import {
   Moon,
   RefreshCw,
   Satellite,
+  ShieldCheck,
   SlidersHorizontal,
   Sun,
+  Workflow,
 } from "lucide-react";
 import {
   Area,
@@ -39,6 +41,12 @@ import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
 import MonitoringPage from "./MonitoringPage";
 import GeospatialPage from "./GeospatialPage";
 import AlertsCenter from "./AlertsCenter";
+import FireSeasonPage from "./FireSeasonPage";
+import HistoricalAnalysisPage from "./HistoricalAnalysisPage";
+import SensorComparisonPage from "./SensorComparisonPage";
+import HarmonizationEvaluationPage from "./HarmonizationEvaluationPage";
+import QualityMethodologyPage from "./QualityMethodologyPage";
+import PipelineManagementPage from "./PipelineManagementPage";
 
 type Filters = {
   period: string;
@@ -329,7 +337,7 @@ function OverviewMap({ data }: { data: OverviewData }) {
 
 function App() {
   const [activePage, setActivePage] = useState<
-    "overview" | "monitoring" | "geospatial" | "alerts"
+    "overview" | "monitoring" | "geospatial" | "alerts" | "fire-season" | "historical" | "sensor-comparison" | "harmonization" | "quality-methodology" | "pipeline-management"
   >("overview");
   const [filters, setFilters] = useState(initialFilters);
   const [data, setData] = useState<OverviewData | null>(null);
@@ -429,10 +437,15 @@ function App() {
             <span>Overview</span>
             {activePage === "overview" && <span className="nav-active-mark" />}
           </button>
-          <button className="nav-item" type="button" disabled title="Coming soon">
+          <button
+            className={`nav-item ${activePage === "harmonization" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("harmonization")}
+            aria-current={activePage === "harmonization" ? "page" : undefined}
+          >
             <Link2 size={17} />
-            <span>Correspondences</span>
-            <span className="nav-soon">SOON</span>
+            <span>Harmonization evaluation</span>
+            {activePage === "harmonization" && <span className="nav-active-mark" />}
           </button>
           <button
             className={`nav-item ${activePage === "geospatial" ? "active" : ""}`}
@@ -463,6 +476,57 @@ function App() {
             <Bell size={17} />
             <span>Alerts center</span>
             {activePage === "alerts" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "fire-season" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("fire-season")}
+            aria-current={activePage === "fire-season" ? "page" : undefined}
+          >
+            <Flame size={17} />
+            <span>Fire season monitor</span>
+            {activePage === "fire-season" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "historical" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("historical")}
+            aria-current={activePage === "historical" ? "page" : undefined}
+          >
+            <Clock3 size={17} />
+            <span>Historical fire analysis</span>
+            {activePage === "historical" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "sensor-comparison" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("sensor-comparison")}
+            aria-current={activePage === "sensor-comparison" ? "page" : undefined}
+          >
+            <SlidersHorizontal size={17} />
+            <span>Sensor comparison</span>
+            {activePage === "sensor-comparison" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "quality-methodology" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("quality-methodology")}
+            aria-current={activePage === "quality-methodology" ? "page" : undefined}
+          >
+            <ShieldCheck size={17} />
+            <span>Quality &amp; methodology</span>
+            {activePage === "quality-methodology" && <span className="nav-active-mark" />}
+          </button>
+          <button
+            className={`nav-item ${activePage === "pipeline-management" ? "active" : ""}`}
+            type="button"
+            onClick={() => setActivePage("pipeline-management")}
+            aria-current={activePage === "pipeline-management" ? "page" : undefined}
+            title="10. Pipeline Management"
+          >
+            <Workflow size={17} />
+            <span>Pipeline management</span>
+            {activePage === "pipeline-management" && <span className="nav-active-mark" />}
           </button>
         </nav>
 
@@ -500,7 +564,19 @@ function App() {
                   ? "Live monitoring"
                   : activePage === "geospatial"
                     ? "Geospatial exploration"
-                    : "Alerts center"}
+                    : activePage === "alerts"
+                      ? "Alerts center"
+                      : activePage === "fire-season"
+                        ? "Fire season monitor"
+                        : activePage === "historical"
+                          ? "06. Historical fire analysis"
+                          : activePage === "sensor-comparison"
+                            ? "07. Sensor comparison"
+                            : activePage === "harmonization"
+                              ? "08. Harmonization evaluation"
+                              : activePage === "quality-methodology"
+                                ? "09. Quality & methodology"
+                                : "10. Pipeline management"}
             </strong>
           </div>
           <div className="topbar-right">
@@ -521,10 +597,22 @@ function App() {
         <div className="page-wrap">
           {activePage === "monitoring" ? (
             <MonitoringPage />
+          ) : activePage === "fire-season" ? (
+            <FireSeasonPage />
           ) : activePage === "alerts" ? (
             <AlertsCenter />
           ) : activePage === "geospatial" ? (
             <GeospatialPage />
+          ) : activePage === "historical" ? (
+            <HistoricalAnalysisPage />
+          ) : activePage === "sensor-comparison" ? (
+            <SensorComparisonPage />
+          ) : activePage === "harmonization" ? (
+            <HarmonizationEvaluationPage />
+          ) : activePage === "quality-methodology" ? (
+            <QualityMethodologyPage />
+          ) : activePage === "pipeline-management" ? (
+            <PipelineManagementPage />
           ) : (
             <>
           <section className="page-heading">
