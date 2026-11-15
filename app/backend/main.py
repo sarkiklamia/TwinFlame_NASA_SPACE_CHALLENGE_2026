@@ -547,7 +547,23 @@ def _dashboard_payload(
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
-    return {"status": "ok"}
+    """Report healthy only when the configured DuckDB file can be queried."""
+    database_path = get_settings().duckdb_path
+    if not database_path.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail=f"Dashboard database is missing at configured path: {database_path}",
+        )
+    try:
+        with duckdb.connect(str(database_path), read_only=True) as connection:
+            connection.execute("SELECT 1").fetchone()
+    except duckdb.Error as exc:
+        logger.exception("Dashboard database health check failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Dashboard database exists but is not accessible.",
+        ) from exc
+    return {"status": "ok", "database": "ok"}
 
 
 @app.get("/api/overview")

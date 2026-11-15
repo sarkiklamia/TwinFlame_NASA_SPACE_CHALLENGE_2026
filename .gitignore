@@ -9,6 +9,9 @@
 .envrc
 .secrets/
 
+# Machine-specific public root CA used only as a Docker BuildKit secret.
+docker/certs/*.crt
+
 # Python bytecode and interpreter artifacts
 __pycache__/
 *.py[cod]
