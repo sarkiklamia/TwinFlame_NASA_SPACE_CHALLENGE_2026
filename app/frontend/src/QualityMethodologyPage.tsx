@@ -355,7 +355,7 @@ export default function QualityMethodologyPage() {
             <ShieldCheck size={13} />
             <span>NASA SPACE APPS CHALLENGE 2026 · DATA ASSURANCE &amp; SCIENTIFIC RIGOR</span>
           </div>
-          <h1>09 · Quality &amp; Methodology</h1>
+          <h1>Quality &amp; Methodology</h1>
           <p className="historical-subtitle">
             Dual-domain interface for automated data quality auditing, missing value detection, and complete mathematical reference for the harmonization methodology.
           </p>

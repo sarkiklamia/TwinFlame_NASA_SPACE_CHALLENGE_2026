@@ -382,7 +382,7 @@ export default function SensorComparisonPage() {
         <div className="comparison-header-main">
           <div className="comparison-badge">
             <span className="badge-pulse" />
-            <span>07 · SENSOR COMPARISON</span>
+            <span>SENSOR COMPARISON</span>
           </div>
           <h1>Cross-Platform Sensor &amp; Observation Comparison</h1>
           <p className="comparison-subtitle">

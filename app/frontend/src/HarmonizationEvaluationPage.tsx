@@ -442,7 +442,7 @@ export default function HarmonizationEvaluationPage() {
             <Link2 size={13} />
             <span>NASA SPACE APPS CHALLENGE 2026 · ALGORITHM EVALUATION & VALIDATION</span>
           </div>
-          <h1>08 · Harmonization Evaluation</h1>
+          <h1>Harmonization Evaluation</h1>
           <p className="historical-subtitle">
             Rigorous evaluation of cross-sensor correspondence matching between MODIS (Terra/Aqua) and VIIRS (NOAA-20/21) active fire observations.
           </p>
