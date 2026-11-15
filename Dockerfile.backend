@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1.7
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+# The dashboard API imports only these runtime packages. Pipeline and test
+# dependencies remain available in requirements.txt for local development.
+RUN --mount=type=secret,id=build_ca,target=/run/secrets/build-ca.crt,required=false \
+    if [ -s /run/secrets/build-ca.crt ]; then export PIP_CERT=/run/secrets/build-ca.crt; fi; \
+    pip install --no-cache-dir \
+    duckdb==1.5.6 \
+    fastapi==0.162.5 \
+    "uvicorn[standard]==0.54.0" \
+    python-dotenv==1.2.4
+
+COPY app ./app
+COPY config ./config
+COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
+
+EXPOSE 8000
+
+CMD ["sh", "/usr/local/bin/backend-entrypoint.sh"]

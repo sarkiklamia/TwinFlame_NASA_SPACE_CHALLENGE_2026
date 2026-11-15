@@ -1,0 +1,59 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      secrets:
+        - build_ca
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+      CORS_ALLOWED_ORIGINS: ${DOCKER_CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      DUCKDB_PATH: /app/database/twinflame.duckdb
+      DUCKDB_READ_ONLY: "true"
+      DUCKDB_THREADS: ${DUCKDB_THREADS:-4}
+    volumes:
+      - type: bind
+        source: ${DUCKDB_HOST_PATH:-./database/twinflame.duckdb}
+        target: /app/database/twinflame.duckdb
+        read_only: true
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      secrets:
+        - build_ca
+      args:
+        VITE_API_BASE_URL: ${DOCKER_VITE_API_BASE_URL:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+secrets:
+  build_ca:
+    file: ${DOCKER_BUILD_CA_FILE:-./docker/certs/avast-root.crt}
